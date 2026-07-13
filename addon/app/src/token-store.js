@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { DATA_DIR } = require('./data-dir');
+const { writeJsonAtomic } = require('./atomic-json');
 
 const STORE_PATH = path.join(DATA_DIR, 'plex-auth.json');
 
@@ -15,7 +16,7 @@ function readStore() {
 
 function writeStore(patch) {
   const store = { ...readStore(), ...patch };
-  fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2));
+  writeJsonAtomic(STORE_PATH, store);
 }
 
 function getClientId() {
@@ -35,4 +36,3 @@ function setStoredToken(token) {
 }
 
 module.exports = { getClientId, getStoredToken, setStoredToken };
-

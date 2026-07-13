@@ -1,10 +1,17 @@
 const fs = require('fs');
 const path = require('path');
 const { DATA_DIR } = require('./data-dir');
+const { writeJsonAtomic } = require('./atomic-json');
 
 const STORE_PATH = path.join(DATA_DIR, 'settings.json');
 
-const DEFAULTS = { plexUrl: '', playerAgentUrl: '', pathMap: [] };
+const DEFAULTS = {
+  plexUrl: '',
+  playerAgentUrl: '',
+  playerAgentSecret: '',
+  adminPinHash: '',
+  pathMap: [],
+};
 
 function readSettings() {
   try {
@@ -16,7 +23,7 @@ function readSettings() {
 
 function writeSettings(patch) {
   const settings = { ...readSettings(), ...patch };
-  fs.writeFileSync(STORE_PATH, JSON.stringify(settings, null, 2));
+  writeJsonAtomic(STORE_PATH, settings);
   return settings;
 }
 

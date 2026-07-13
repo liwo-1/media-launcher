@@ -1,25 +1,32 @@
-// Polls the media PC's player-agent (which in turn reads MPC-HC's Web Interface) after a
-// successful Play, so we can (a) report progress back to Plex - making "Continue Watching" and
-// per-show watched counts accurate for things played through this launcher, not just Plex's own
-// apps - and (b) auto-advance to the next episode when one finishes naturally.
-//
-// NOT YET VERIFIED end-to-end - depends on MPC-HC's Web Interface being enabled on the media PC
-// (a manual one-time setting change) and mpc-status.js's field-name assumptions holding up. Test
-// this against a real playback session before relying on it.
-
+const crypto = require('crypto');
 const plex = require('./plex');
+const { getPlayerAgentUrl, getPlayerAgentHeaders } = require('./agent-config');
 
 const POLL_INTERVAL_MS = 10000;
-const WATCHED_THRESHOLD = 0.9; // matches standard Plex/client convention for "counts as watched"
-const MAX_POLL_DURATION_MS = 6 * 60 * 60 * 1000; // safety cap so a stuck poll can't run forever
+const WATCHED_THRESHOLD = 0.9;
+const AUTO_ADVANCE_THRESHOLD = 0.9;
+const MAX_POLL_DURATION_MS = 6 * 60 * 60 * 1000;
+const MAX_CONSECUTIVE_FAILURES = 3;
 
-const PLAYER_AGENT_URL = process.env.PLAYER_AGENT_URL;
+let currentSession = null;
+
+function sessionIsCurrent(session) {
+  return !session.cancelled && session === currentSession;
+}
+
+function endSession(session) {
+  session.cancelled = true;
+  if (session.interval) clearInterval(session.interval);
+  if (session === currentSession) currentSession = null;
+}
 
 async function getPlayerStatus() {
-  const response = await fetch(`${PLAYER_AGENT_URL}/status`);
-  if (!response.ok) {
-    throw new Error(`player-agent /status returned ${response.status}`);
-  }
+  const playerAgentUrl = getPlayerAgentUrl();
+  if (!playerAgentUrl) throw new Error('Player agent URL is not configured');
+  const response = await fetch(`${playerAgentUrl}/status`, {
+    headers: getPlayerAgentHeaders(),
+  });
+  if (!response.ok) throw new Error(`player-agent /status returned ${response.status}`);
   return response.json();
 }
 
@@ -27,62 +34,131 @@ async function findNextEpisode(item) {
   if (item.type !== 'episode') return null;
   const episodes = await plex.getEpisodes(item.parentRatingKey);
   const sorted = [...episodes].sort((a, b) => a.index - b.index);
-  const currentIdx = sorted.findIndex((e) => String(e.ratingKey) === String(item.ratingKey));
+  const currentIdx = sorted.findIndex((episode) => String(episode.ratingKey) === String(item.ratingKey));
   if (currentIdx === -1 || currentIdx === sorted.length - 1) return null;
   return sorted[currentIdx + 1];
 }
 
-function monitorPlayback(item) {
-  const startedAt = Date.now();
-  let markedWatched = false;
-
-  const interval = setInterval(async () => {
-    if (Date.now() - startedAt > MAX_POLL_DURATION_MS) {
-      clearInterval(interval);
-      return;
-    }
-
-    let status;
-    try {
-      status = await getPlayerStatus();
-    } catch {
-      clearInterval(interval);
-      return;
-    }
-
-    if (!status.duration) return;
-
-    const fraction = status.position / status.duration;
-    const state = status.state === 2 ? 'playing' : status.state === 1 ? 'paused' : 'stopped';
-
-    try {
-      await plex.reportTimeline(item.ratingKey, state, status.position, status.duration);
-    } catch {
-      // best-effort - a Plex hiccup shouldn't stop the monitor
-    }
-
-    if (!markedWatched && fraction >= WATCHED_THRESHOLD) {
-      markedWatched = true;
-      try {
-        await plex.markWatched(item.ratingKey);
-      } catch {
-        // best-effort
-      }
-
-      const nextEpisode = await findNextEpisode(item).catch(() => null);
-      if (nextEpisode) {
-        clearInterval(interval);
-        const { playItem } = require('./play'); // lazy require, avoids circular load at startup
-        await playItem(nextEpisode.ratingKey).catch(() => {});
-        return;
-      }
-    }
-
-    if (status.state === 0 && fraction < WATCHED_THRESHOLD) {
-      // Stopped before finishing - user closed early. Don't mark watched, don't advance.
-      clearInterval(interval);
-    }
-  }, POLL_INTERVAL_MS);
+function createSession(item) {
+  return {
+    id: crypto.randomUUID(),
+    item,
+    interval: null,
+    startedAt: Date.now(),
+    markedWatched: false,
+    lastState: null,
+    lastFraction: 0,
+    consecutiveFailures: 0,
+    cancelled: false,
+    polling: false,
+  };
 }
 
-module.exports = { monitorPlayback };
+function defaultDependencies() {
+  return {
+    getPlayerStatus,
+    reportTimeline: (...args) => plex.reportTimeline(...args),
+    markWatched: (...args) => plex.markWatched(...args),
+    findNextEpisode,
+    playItem: (ratingKey) => require('./play').playItem(ratingKey),
+    now: () => Date.now(),
+  };
+}
+
+async function pollOnce(session, dependencies = defaultDependencies()) {
+  if (!sessionIsCurrent(session) || session.polling) return;
+  if (dependencies.now() - session.startedAt > MAX_POLL_DURATION_MS) {
+    endSession(session);
+    return;
+  }
+
+  session.polling = true;
+  try {
+    let status;
+    try {
+      status = await dependencies.getPlayerStatus();
+    } catch (err) {
+      if (!sessionIsCurrent(session)) return;
+      session.consecutiveFailures += 1;
+      if (session.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) endSession(session);
+      return;
+    }
+    if (!sessionIsCurrent(session)) return;
+    session.consecutiveFailures = 0;
+
+    const state = status.state === 2 ? 'playing' : status.state === 1 ? 'paused' : 'stopped';
+    const previousState = session.lastState;
+    const previousFraction = session.lastFraction;
+    const hasDuration = Number(status.duration) > 0;
+    const fraction = hasDuration
+      ? Math.max(0, Math.min(1, status.position / status.duration))
+      : previousFraction;
+
+    if (hasDuration) {
+      try {
+        await dependencies.reportTimeline(session.item.ratingKey, state, status.position, status.duration);
+      } catch {
+        // Progress reporting is best-effort.
+      }
+      if (!sessionIsCurrent(session)) return;
+    }
+
+    if (hasDuration && !session.markedWatched && fraction >= WATCHED_THRESHOLD) {
+      session.markedWatched = true;
+      try {
+        await dependencies.markWatched(session.item.ratingKey);
+      } catch {
+        // Watched marking is best-effort and will not interrupt monitoring.
+      }
+      if (!sessionIsCurrent(session)) return;
+    }
+
+    session.lastState = state;
+    session.lastFraction = fraction;
+
+    const finishedNearEnd =
+      previousState !== null &&
+      previousState !== 'stopped' &&
+      state === 'stopped' &&
+      Math.max(previousFraction, fraction) >= AUTO_ADVANCE_THRESHOLD;
+
+    if (finishedNearEnd) {
+      const nextEpisode = await dependencies.findNextEpisode(session.item).catch(() => null);
+      if (!sessionIsCurrent(session)) return;
+      endSession(session);
+      if (nextEpisode) await dependencies.playItem(nextEpisode.ratingKey).catch(() => {});
+      return;
+    }
+
+    if (state === 'stopped' && previousState !== null && fraction < AUTO_ADVANCE_THRESHOLD) {
+      endSession(session);
+    }
+  } finally {
+    session.polling = false;
+  }
+}
+
+function monitorPlayback(item) {
+  if (currentSession) endSession(currentSession);
+  const session = createSession(item);
+  currentSession = session;
+  session.interval = setInterval(() => {
+    pollOnce(session).catch((err) => console.error(`playback monitor failed: ${err.message}`));
+  }, POLL_INTERVAL_MS);
+  return session;
+}
+
+module.exports = {
+  monitorPlayback,
+  _test: {
+    createSession,
+    pollOnce,
+    endSession,
+    setCurrentSession(session) {
+      if (currentSession) endSession(currentSession);
+      currentSession = session;
+    },
+    getCurrentSession: () => currentSession,
+    constants: { WATCHED_THRESHOLD, AUTO_ADVANCE_THRESHOLD, MAX_CONSECUTIVE_FAILURES },
+  },
+};

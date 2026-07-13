@@ -123,6 +123,7 @@ public class MainForm : Form
         var portChanged = form.Config.Port != _config.Port;
         form.Config.Save();
         _config = form.Config;
+        PlayServer.UpdateConfig(_config);
         if (_webView.CoreWebView2 != null)
         {
             _webView.Source = new Uri(_config.HomeAssistantUrl);

@@ -156,10 +156,77 @@ async function renderSettingsView() {
   appEl.innerHTML = '';
   const wrap = document.createElement('div');
   wrap.className = 'settings-view';
-  wrap.appendChild(renderPlexAuthSection(settings.plexLinked));
 
   const form = document.createElement('form');
   form.className = 'settings-form';
+
+  const securitySection = document.createElement('div');
+  securitySection.className = 'settings-section';
+  const securityHeading = document.createElement('h2');
+  securityHeading.textContent = 'Security';
+
+  const adminPinLabel = document.createElement('label');
+  adminPinLabel.textContent = settings.adminPinConfigured ? 'Change admin PIN (optional)' : 'Set admin PIN';
+  const adminPinInput = document.createElement('input');
+  adminPinInput.type = 'password';
+  adminPinInput.inputMode = 'numeric';
+  adminPinInput.autocomplete = 'new-password';
+  adminPinInput.minLength = 4;
+  adminPinInput.maxLength = 12;
+  adminPinInput.pattern = '[0-9]{4,12}';
+  adminPinInput.placeholder = settings.adminPinConfigured ? 'Leave blank to keep the current PIN' : '4 to 12 digits';
+  adminPinInput.required = !settings.adminPinConfigured;
+  adminPinLabel.appendChild(adminPinInput);
+
+  const secretLabel = document.createElement('label');
+  secretLabel.textContent = 'Player agent shared secret';
+  const secretRow = document.createElement('div');
+  secretRow.className = 'secret-row';
+  const secretInput = document.createElement('input');
+  secretInput.type = 'text';
+  secretInput.readOnly = true;
+  secretInput.value = settings.playerAgentSecret || '';
+  const copySecretBtn = document.createElement('button');
+  copySecretBtn.type = 'button';
+  copySecretBtn.className = 'icon-button-wide';
+  copySecretBtn.textContent = 'Copy';
+  copySecretBtn.addEventListener('click', async () => {
+    try {
+      if (navigator.clipboard) await navigator.clipboard.writeText(secretInput.value);
+      else {
+        secretInput.select();
+        document.execCommand('copy');
+      }
+      showToast('Player secret copied');
+    } catch (err) {
+      showToast(`Could not copy automatically: ${err.message}`, true);
+    }
+  });
+  const regenerateSecretBtn = document.createElement('button');
+  regenerateSecretBtn.type = 'button';
+  regenerateSecretBtn.className = 'icon-button-wide';
+  regenerateSecretBtn.textContent = 'Regenerate';
+  regenerateSecretBtn.addEventListener('click', async () => {
+    if (!window.confirm('Regenerate the player secret? Playback will fail until the new value is saved in the player app.')) return;
+    regenerateSecretBtn.disabled = true;
+    try {
+      const result = await api.regeneratePlayerAgentSecret();
+      secretInput.value = result.playerAgentSecret;
+      showToast('Player secret regenerated');
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      regenerateSecretBtn.disabled = false;
+    }
+  });
+  secretRow.append(secretInput, copySecretBtn, regenerateSecretBtn);
+  secretLabel.appendChild(secretRow);
+
+  const securityHint = document.createElement('p');
+  securityHint.className = 'hint';
+  securityHint.textContent =
+    'The admin PIN protects settings and Plex linking. Copy the shared secret into the Windows player agent Settings dialog.';
+  securitySection.append(securityHeading, adminPinLabel, secretLabel, securityHint);
 
   const connSection = document.createElement('div');
   connSection.className = 'settings-section';
@@ -251,7 +318,15 @@ async function renderSettingsView() {
         plexUrl: plexUrlInput.value,
         playerAgentUrl: playerUrlInput.value,
         pathMap: collectPathMap(pathMapRows),
+        ...(adminPinInput.value ? { newAdminPin: adminPinInput.value } : {}),
       });
+      if (adminPinInput.value) {
+        settings.adminPinConfigured = true;
+        adminPinInput.value = '';
+        adminPinInput.required = false;
+        adminPinInput.placeholder = 'Leave blank to keep the current PIN';
+        adminPinLabel.firstChild.textContent = 'Change admin PIN (optional)';
+      }
       showToast('Settings saved');
       try {
         await buildNav(); // picks up newly-configured/linked Plex libraries without a full reload
@@ -265,7 +340,7 @@ async function renderSettingsView() {
     }
   });
 
-  form.append(connSection, pathMapSection, saveBtn);
-  wrap.appendChild(form);
+  form.append(securitySection, connSection, pathMapSection, saveBtn);
+  wrap.append(form, renderPlexAuthSection(settings.plexLinked));
   appEl.appendChild(wrap);
 }

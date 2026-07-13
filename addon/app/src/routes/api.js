@@ -1,4 +1,5 @@
 const express = require('express');
+const { Readable } = require('stream');
 const plex = require('../plex');
 const { playItem, PlayError } = require('../play');
 
@@ -115,10 +116,15 @@ router.get('/image', async (req, res) => {
   try {
     const imageResponse = await plex.getImage(relativePath);
     res.set('Content-Type', imageResponse.headers.get('content-type') || 'image/jpeg');
-    const buffer = Buffer.from(await imageResponse.arrayBuffer());
-    res.send(buffer);
+    for (const header of ['content-length', 'cache-control', 'etag', 'last-modified']) {
+      const value = imageResponse.headers.get(header);
+      if (value) res.set(header, value);
+    }
+    if (!imageResponse.body) return res.status(502).json({ error: 'Plex returned an empty image response' });
+    Readable.fromWeb(imageResponse.body).on('error', (err) => res.destroy(err)).pipe(res);
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    if (!res.headersSent) res.status(502).json({ error: err.message });
+    else res.destroy(err);
   }
 });
 

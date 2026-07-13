@@ -4,6 +4,33 @@
 // origin, which under Ingress is Home Assistant itself, not the add-on - a relative path resolves
 // against the current document instead, landing in the right place either way.
 const api = {
+  _adminPinKey: 'media-launcher-admin-pin',
+
+  _getStoredAdminPin() {
+    return localStorage.getItem(api._adminPinKey) || '';
+  },
+
+  _storeAdminPin(pin) {
+    if (pin) localStorage.setItem(api._adminPinKey, pin);
+    else localStorage.removeItem(api._adminPinKey);
+  },
+
+  async _adminFetch(path, options = {}, allowPrompt = true) {
+    const pin = api._getStoredAdminPin();
+    const headers = new Headers(options.headers || {});
+    if (pin) headers.set('X-Admin-Pin', pin);
+    let response = await fetch(path, { ...options, headers });
+
+    if (response.status === 401 && allowPrompt) {
+      api._storeAdminPin('');
+      const entered = window.prompt('Enter the Media Launcher admin PIN');
+      if (!entered) return response;
+      headers.set('X-Admin-Pin', entered);
+      response = await fetch(path, { ...options, headers });
+      if (response.ok) api._storeAdminPin(entered);
+    }
+    return response;
+  },
   async getLibraries() {
     return api._get('api/libraries');
   },
@@ -64,27 +91,31 @@ const api = {
   },
 
   async requestPlexPin() {
-    return api._post('api/plex-auth/pin');
+    return api._postAdmin('api/plex-auth/pin');
   },
 
   async checkPlexPin(id) {
-    return api._get(`api/plex-auth/pin/${id}`);
+    return api._getAdmin(`api/plex-auth/pin/${id}`);
   },
 
   async unlinkPlex() {
-    return api._post('api/plex-auth/unlink');
+    return api._postAdmin('api/plex-auth/unlink');
   },
 
   async getSettings() {
-    return api._get('api/settings');
+    return api._getAdmin('api/settings');
   },
 
   async getPlexLibraryPaths() {
-    return api._get('api/settings/plex-libraries');
+    return api._getAdmin('api/settings/plex-libraries');
+  },
+
+  async regeneratePlayerAgentSecret() {
+    return api._postAdmin('api/settings/player-secret/regenerate');
   },
 
   async saveSettings(settings) {
-    const response = await fetch('api/settings', {
+    const response = await api._adminFetch('api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
@@ -93,6 +124,7 @@ const api = {
     if (!response.ok) {
       throw new Error(body.error || `Request failed (${response.status})`);
     }
+    if (settings.newAdminPin) api._storeAdminPin(settings.newAdminPin);
     return body;
   },
 
@@ -111,6 +143,20 @@ const api = {
     if (!response.ok) {
       throw new Error(body.error || `Request failed (${response.status})`);
     }
+    return body;
+  },
+
+  async _postAdmin(path) {
+    const response = await api._adminFetch(path, { method: 'POST' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+    return body;
+  },
+
+  async _getAdmin(path) {
+    const response = await api._adminFetch(path);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
     return body;
   },
 };

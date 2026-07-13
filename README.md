@@ -25,8 +25,9 @@ just using Plex's own.
 
 ### player-agent-app features
 
-- **First-run Settings dialog** - Home Assistant add-on URL, player agent port, optional MPC-HC
-  path override, "Start with Windows" checkbox. Reopen any time from the tray icon.
+- **First-run Settings dialog** - Home Assistant add-on URL, player agent port, shared secret,
+  allowed UNC media roots, optional MPC-HC path override, and "Start with Windows" checkbox.
+  Reopen any time from the tray icon.
 - **MPC-HC auto-detection** - checks the Windows registry and default install paths live as you
   open Settings; shows a **Browse...** button and a download link if it can't find MPC-HC.
 - **Log tab** inside Settings - shows `player-agent.log` (next to the exe) without needing to dig
@@ -51,6 +52,8 @@ just using Plex's own.
   prompts for auth.
 - .NET 8 SDK on whichever machine builds `player-agent-app` (not needed on the media PC itself -
   the published exe is self-contained).
+- Microsoft Edge WebView2 Runtime on the media PC (included with current Windows 10/11 and Edge;
+  install it separately if the kiosk window reports that WebView2 is unavailable).
 
 ### 2. player-agent-app (media PC)
 
@@ -65,12 +68,19 @@ dotnet publish -c Release
 
 (output: `bin\Release\net8.0-windows\win-x64\publish\MediaLauncherPlayerAgent.exe`)
 
-Copy just that one file to the media PC and run it. First launch shows the Settings dialog; fill in
-the Home Assistant add-on URL (step 3 below) once it's up, e.g. `http://<ha-host-ip>:8088`.
+Copy just that one file to the media PC and run it. First launch shows the Settings dialog. Fill in:
+
+- The Home Assistant add-on URL from step 3, e.g. `http://<ha-host-ip>:8088`.
+- The shared secret shown on the add-on Settings page.
+- Every UNC root the player may open, one per line, e.g. `\\nas-host\share\Movies`.
+
+The player rejects URLs, local paths, paths outside these roots, and unsupported media extensions.
 
 To update later: exit the running instance from its tray icon first (Windows won't let you
 overwrite a running exe), then drop the new build in the same folder with the same filename -
-`config.json` and the "Start with Windows" registry entry both keep working untouched.
+configuration in `%LocalAppData%\MediaLauncherPlayerAgent\` and the "Start with Windows" registry
+entry both keep working untouched. Existing `config.json` and logs beside an older executable are
+migrated automatically on first launch.
 
 **Also enable MPC-HC's Web Interface** (View → Options → Player → Web Interface → check "Listen on
 port", default 13579) - needed for playback monitoring (progress reporting back to Plex + auto-play
@@ -92,6 +102,10 @@ different, adjust the field list there.
    - **Plex server URL** - Plex's reachable address from the HA host (default port 32400, e.g.
      `http://<nas-ip>:32400`).
    - **Player agent URL** - `http://<media-pc-ip>:7777`.
+   - **Admin PIN** - 4 to 12 digits. This protects Settings and Plex account linking while normal
+     household browsing and playback remain login-free. The browser remembers the PIN locally.
+   - **Player agent shared secret** - copy this value into player-agent-app. Regenerating it
+     immediately invalidates the old value.
    - **Library path mapping** - one row per library folder. Click **Discover from Plex** to
      auto-fill the *from* side straight from Plex's own API (one row per physical folder, labeled
      with the library name - handles libraries backed by more than one folder too); only the *to*
@@ -112,7 +126,8 @@ Invoke-RestMethod -Uri "http://<ha-host-ip>:8088/api/play/<a-real-plex-ratingKey
 (Copy a `ratingKey` from Plex Web's URL bar when viewing an item.)
 
 Once the add-on's confirmed working, open player-agent-app's Settings (tray icon) and make sure
-the Home Assistant add-on URL matches, then Save - the kiosk view reloads to show it immediately.
+the Home Assistant add-on URL and shared secret match and the UNC roots cover every mapped path,
+then Save - the kiosk view reloads to show it immediately.
 If "Start with Windows" was checked, reboot the media PC and confirm it comes back up fullscreen
 on the library grid with no manual steps.
 
@@ -140,31 +155,36 @@ Note: `PATH_MAP` (whether saved via the Settings page or set as an env var) is a
 both `from` and `to` as forward-slash paths (e.g. `"to": "//nas/Movies"`), never literal
 backslashes. `pathmap.js` converts to backslashes as the final step.
 
-## Playback monitoring (partially verified)
+See [ARCHITECTURE.md](ARCHITECTURE.md) for component/data flow, [SECURITY.md](SECURITY.md) for the
+LAN threat model, and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common setup failures.
+
+## Playback monitoring
 
 **Confirmed working:** clicking Play resolves the Plex path, maps it to a UNC path, reaches
 player-agent-app over the LAN, and launches MPC-HC fullscreen with the right file - for both
 movies and TV episodes.
 
-**Still unverified:** after a successful Play, `src/playback-monitor.js` polls player-agent-app's
-`/status` every 10s (which itself reads MPC-HC's Web Interface via `MpcStatus.cs`) and:
+After a successful Play, `src/playback-monitor.js` maintains one cancellable playback session and
+polls player-agent-app's `/status` every 10s (which itself reads MPC-HC's Web Interface via
+`MpcStatus.cs`). It:
 
 - Reports position/state back to Plex (`/:/timeline`) - makes progress from playback through this
   launcher show up in Plex's own "Continue Watching"/on-deck data, not just plays through Plex's
   own apps.
 - Marks the item watched (`/:/scrobble`) once past 90% - the same threshold Plex/most clients use.
-- If it was a TV episode, automatically starts the next episode in the season.
-- If MPC-HC is closed before reaching 90%, just stops polling - no watched mark, no auto-advance.
+- If it was a TV episode, automatically starts the next episode only after playback transitions to
+  stopped near the end; reaching 90% while still playing no longer cuts off the final 10%.
+- Cancels the previous monitor when a new item starts and tolerates two transient status failures.
+- If MPC-HC is closed early, stops polling without auto-advance.
 
-This is all real code, but none of it has been confirmed against actual playback yet - it depends
-on the Web Interface being enabled (see step 2 above) and `MpcStatus.cs`'s field-name assumptions
-holding up. Test it by playing something through the launcher and watching the add-on's log for
-`reportTimeline`/`markWatched` activity, and confirm episode auto-advance actually fires near the
-end of a real episode.
+The state machine and path-boundary behavior have automated tests. End-to-end status parsing and
+auto-advance still require confirmation against a real MPC-HC playback session because the Web
+Interface output varies by MPC-HC version. Follow the verification steps in
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md#playback-monitoring-verification).
 
 ## Future enhancements (Plex Pass)
 
-Not built yet - see the plan doc's section 12 for design notes:
+Not built yet:
 
 - **Auto-skip intro** - read Plex's intro marker (`GET /library/metadata/{ratingKey}?includeMarkers=1`)
   and start MPC-HC at the marker's end offset instead of 0:00.
