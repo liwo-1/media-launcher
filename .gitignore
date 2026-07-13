@@ -7,8 +7,6 @@ addon/app/local-data/
 # (still a personal setup script, not an installable client) - remove this line when it is
 player-agent/
 
-# player-agent-app (the .NET/WebView2 rewrite) - untested on real hardware yet, keep local until
-# it's actually confirmed working on the media PC
+# .NET build artifacts for player-agent-app
 player-agent-app/bin/
 player-agent-app/obj/
-player-agent-app/
