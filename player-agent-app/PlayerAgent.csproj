@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>MediaLauncherPlayerAgent</AssemblyName>
     <RootNamespace>MediaLauncherPlayerAgent</RootNamespace>
-    <Version>1.2.0</Version>
+    <Version>1.2.0-beta.1</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
