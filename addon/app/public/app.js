@@ -44,13 +44,15 @@ function setActiveNav(section) {
 }
 
 let librariesCache = null;
-async function getLibraryKey(plexType) {
+async function loadLibraries() {
   if (!librariesCache) {
-    librariesCache = await api.getLibraries();
+    const data = await api.getLibraries();
+    // renderPosterGrid/detail views only know how to show movie/show-shaped Plex metadata -
+    // other library types (music, photos, ...) are left out of the nav rather than showing a
+    // broken page.
+    librariesCache = data.Items.filter((section) => section.type === 'movie' || section.type === 'show');
   }
-  const lib = librariesCache.Items.find((v) => v.type === plexType);
-  if (!lib) throw new Error(`No "${plexType}" library found in Plex`);
-  return lib.key;
+  return librariesCache;
 }
 
 async function renderContinueWatching(container) {
@@ -154,54 +156,45 @@ async function renderRecentlyAddedRow(container, libraryKey, onSelect) {
   container.appendChild(row);
 }
 
-async function renderHomeMovies() {
-  setActiveNav('movies');
+async function renderLibraryHome(section) {
+  setActiveNav(`library-${section.key}`);
   clearAmbientBackground();
   appEl.innerHTML = '';
   await renderContinueWatching(appEl);
+  const targetRoute = section.type === 'show' ? 'show' : 'item';
+  const onSelect = (item) => {
+    window.location.hash = `#/${targetRoute}/${item.ratingKey}`;
+  };
   try {
-    const libraryKey = await getLibraryKey('movie');
-    await renderRecentlyAddedRow(appEl, libraryKey, (item) => {
-      window.location.hash = `#/item/${item.ratingKey}`;
-    });
+    await renderRecentlyAddedRow(appEl, section.key, onSelect);
     const gridHeading = document.createElement('div');
     gridHeading.className = 'section-heading';
-    gridHeading.textContent = 'Movies';
+    gridHeading.textContent = section.title;
     appEl.appendChild(gridHeading);
-    const items = await api.getItems(libraryKey);
-    appEl.appendChild(
-      renderPosterGrid(items.Items, (item) => {
-        window.location.hash = `#/item/${item.ratingKey}`;
-      })
-    );
+    const items = await api.getItems(section.key);
+    appEl.appendChild(renderPosterGrid(items.Items, onSelect));
   } catch (err) {
     appEl.innerHTML += `<p class="error">${err.message}</p>`;
   }
 }
 
-async function renderHomeShows() {
-  setActiveNav('tvshows');
-  clearAmbientBackground();
-  appEl.innerHTML = '';
-  await renderContinueWatching(appEl);
-  try {
-    const libraryKey = await getLibraryKey('show');
-    await renderRecentlyAddedRow(appEl, libraryKey, (item) => {
-      window.location.hash = `#/show/${item.ratingKey}`;
-    });
-    const gridHeading = document.createElement('div');
-    gridHeading.className = 'section-heading';
-    gridHeading.textContent = 'TV Shows';
-    appEl.appendChild(gridHeading);
-    const items = await api.getItems(libraryKey);
-    appEl.appendChild(
-      renderPosterGrid(items.Items, (item) => {
-        window.location.hash = `#/show/${item.ratingKey}`;
-      })
-    );
-  } catch (err) {
-    appEl.innerHTML += `<p class="error">${err.message}</p>`;
+async function renderLibraryByKey(key) {
+  const sections = await loadLibraries();
+  const section = sections.find((s) => String(s.key) === String(key));
+  if (!section) {
+    appEl.innerHTML = '<p class="error">Library not found - it may have been removed from Plex.</p>';
+    return;
   }
+  return renderLibraryHome(section);
+}
+
+async function renderDefaultLibrary() {
+  const sections = await loadLibraries();
+  if (!sections.length) {
+    appEl.innerHTML = '<p class="error">No movie or TV libraries found in Plex.</p>';
+    return;
+  }
+  window.location.hash = `#/library/${sections[0].key}`; // triggers hashchange -> router()
 }
 
 async function renderMovieDetailView(itemId) {
@@ -281,37 +274,59 @@ async function renderShowDetailView(showId) {
   }
 }
 
-function setupSidebarScanButtons() {
-  document.querySelectorAll('.nav-scan-button').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const plexType = btn.dataset.scan;
-      const label = plexType === 'movie' ? 'Movies' : 'TV Shows';
-      btn.disabled = true;
-      try {
-        const libraryKey = await getLibraryKey(plexType);
-        await api.scanLibrary(libraryKey);
-        showToast(`${label} library scan started`);
-      } catch (err) {
-        showToast(err.message, true);
-      } finally {
-        btn.disabled = false;
-      }
-    });
+function renderNavItem(section) {
+  const div = document.createElement('div');
+  div.className = 'nav-item';
+
+  const a = document.createElement('a');
+  a.href = `#/library/${section.key}`;
+  a.dataset.nav = `library-${section.key}`;
+  a.textContent = section.title;
+  div.appendChild(a);
+
+  const scanBtn = document.createElement('button');
+  scanBtn.className = 'nav-scan-button';
+  scanBtn.title = `Scan ${section.title} library`;
+  scanBtn.textContent = '⟳';
+  scanBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    scanBtn.disabled = true;
+    try {
+      await api.scanLibrary(section.key);
+      showToast(`${section.title} library scan started`);
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      scanBtn.disabled = false;
+    }
   });
+  div.appendChild(scanBtn);
+
+  return div;
+}
+
+// Rebuilds the sidebar from Plex's current library list - called at startup and again after
+// Settings are saved, so newly-added/removed Plex libraries show up without a full page reload.
+async function buildNav() {
+  librariesCache = null; // force a fresh fetch, in case libraries changed since last load
+  const sections = await loadLibraries();
+  const container = document.getElementById('nav-libraries');
+  container.innerHTML = '';
+  for (const section of sections) {
+    container.appendChild(renderNavItem(section));
+  }
 }
 
 function router() {
-  const hash = window.location.hash || '#/home/movies';
+  const hash = window.location.hash || '';
   const [, root, param] = hash.split('/');
 
   if (root === 'settings') return renderSettingsView();
-  if (root === 'home' && param === 'tvshows') return renderHomeShows();
-  if (root === 'home') return renderHomeMovies();
+  if (root === 'library' && param) return renderLibraryByKey(param);
   if (root === 'item' && param) return renderMovieDetailView(param);
   if (root === 'show' && param) return renderShowDetailView(param);
 
-  return renderHomeMovies();
+  return renderDefaultLibrary();
 }
 
 async function bootstrap() {
@@ -325,10 +340,16 @@ async function bootstrap() {
   const incomplete = !settings || !settings.plexUrl || !settings.playerAgentUrl || !settings.plexLinked;
   if (incomplete && window.location.hash !== '#/settings') {
     window.location.hash = '#/settings'; // triggers the hashchange listener below, which calls router()
-  } else {
-    router();
+    return;
   }
-  setupSidebarScanButtons();
+
+  try {
+    await buildNav();
+  } catch {
+    // Nav is a nice-to-have at this point; routes will surface a clearer error if Plex is
+    // unreachable.
+  }
+  router();
 }
 
 window.addEventListener('hashchange', router);

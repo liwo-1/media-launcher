@@ -253,6 +253,11 @@ async function renderSettingsView() {
         pathMap: collectPathMap(pathMapRows),
       });
       showToast('Settings saved');
+      try {
+        await buildNav(); // picks up newly-configured/linked Plex libraries without a full reload
+      } catch {
+        // Nav refresh is best-effort - Save itself already succeeded.
+      }
     } catch (err) {
       showToast(err.message, true);
     } finally {
