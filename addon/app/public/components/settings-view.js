@@ -178,55 +178,18 @@ async function renderSettingsView() {
   adminPinInput.required = !settings.adminPinConfigured;
   adminPinLabel.appendChild(adminPinInput);
 
-  const secretLabel = document.createElement('label');
-  secretLabel.textContent = 'Player agent shared secret';
-  const secretRow = document.createElement('div');
-  secretRow.className = 'secret-row';
-  const secretInput = document.createElement('input');
-  secretInput.type = 'text';
-  secretInput.readOnly = true;
-  secretInput.value = settings.playerAgentSecret || '';
-  const copySecretBtn = document.createElement('button');
-  copySecretBtn.type = 'button';
-  copySecretBtn.className = 'icon-button-wide';
-  copySecretBtn.textContent = 'Copy';
-  copySecretBtn.addEventListener('click', async () => {
-    try {
-      if (navigator.clipboard) await navigator.clipboard.writeText(secretInput.value);
-      else {
-        secretInput.select();
-        document.execCommand('copy');
-      }
-      showToast('Player secret copied');
-    } catch (err) {
-      showToast(`Could not copy automatically: ${err.message}`, true);
-    }
-  });
-  const regenerateSecretBtn = document.createElement('button');
-  regenerateSecretBtn.type = 'button';
-  regenerateSecretBtn.className = 'icon-button-wide';
-  regenerateSecretBtn.textContent = 'Regenerate';
-  regenerateSecretBtn.addEventListener('click', async () => {
-    if (!window.confirm('Regenerate the player secret? Playback will fail until the new value is saved in the player app.')) return;
-    regenerateSecretBtn.disabled = true;
-    try {
-      const result = await api.regeneratePlayerAgentSecret();
-      secretInput.value = result.playerAgentSecret;
-      showToast('Player secret regenerated');
-    } catch (err) {
-      showToast(err.message, true);
-    } finally {
-      regenerateSecretBtn.disabled = false;
-    }
-  });
-  secretRow.append(secretInput, copySecretBtn, regenerateSecretBtn);
-  secretLabel.appendChild(secretRow);
+  const pairingLabel = document.createElement('label');
+  pairingLabel.textContent = 'Player agent pairing';
+  const pairingStatus = document.createElement('div');
+  pairingStatus.className = 'pairing-status';
+  pairingStatus.textContent = settings.playerAgentUrl ? 'Checking…' : 'Not configured';
+  pairingLabel.appendChild(pairingStatus);
 
   const securityHint = document.createElement('p');
   securityHint.className = 'hint';
   securityHint.textContent =
-    'The admin PIN protects settings and Plex linking. Copy the shared secret into the Windows player agent Settings dialog.';
-  securitySection.append(securityHeading, adminPinLabel, secretLabel, securityHint);
+    'The admin PIN protects settings and Plex linking. The player agent pairs automatically once and rejects remote re-pairing.';
+  securitySection.append(securityHeading, adminPinLabel, pairingLabel, securityHint);
 
   const connSection = document.createElement('div');
   connSection.className = 'settings-section';
@@ -250,6 +213,25 @@ async function renderSettingsView() {
   playerUrlInput.placeholder = 'http://192.168.1.x:7777';
   playerUrlInput.value = settings.playerAgentUrl || '';
   playerUrlLabel.appendChild(playerUrlInput);
+
+  async function refreshPlayerAgentPairing() {
+    if (!playerUrlInput.value.trim()) {
+      pairingStatus.className = 'pairing-status';
+      pairingStatus.textContent = 'Not configured';
+      return;
+    }
+
+    pairingStatus.className = 'pairing-status';
+    pairingStatus.textContent = 'Checking…';
+    try {
+      const result = await api.pairPlayerAgent();
+      pairingStatus.className = 'pairing-status paired';
+      pairingStatus.textContent = result.alreadyPaired ? '✓ Paired' : '✓ Paired automatically';
+    } catch (err) {
+      pairingStatus.className = 'pairing-status error';
+      pairingStatus.textContent = `✕ ${err.message}`;
+    }
+  }
 
   connSection.append(connHeading, plexUrlLabel, playerUrlLabel);
 
@@ -328,6 +310,7 @@ async function renderSettingsView() {
         adminPinLabel.firstChild.textContent = 'Change admin PIN (optional)';
       }
       showToast('Settings saved');
+      await refreshPlayerAgentPairing();
       try {
         await buildNav(); // picks up newly-configured/linked Plex libraries without a full reload
       } catch {
@@ -340,7 +323,8 @@ async function renderSettingsView() {
     }
   });
 
-  form.append(securitySection, connSection, pathMapSection, saveBtn);
-  wrap.append(form, renderPlexAuthSection(settings.plexLinked));
+  form.append(pathMapSection, connSection, securitySection, saveBtn);
+  wrap.append(renderPlexAuthSection(settings.plexLinked), form);
   appEl.appendChild(wrap);
+  refreshPlayerAgentPairing();
 }

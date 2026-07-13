@@ -4,6 +4,8 @@ namespace MediaLauncherPlayerAgent;
 
 public class AppConfig
 {
+    private static readonly object SaveLock = new();
+
     public string HomeAssistantUrl { get; set; } = "";
     public int Port { get; set; } = 7777;
     public string? MpcPathOverride { get; set; }
@@ -45,11 +47,14 @@ public class AppConfig
 
     public void Save()
     {
-        AppPaths.EnsureDataDirectory();
-        var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-        var tempPath = $"{AppPaths.ConfigPath}.{Environment.ProcessId}.tmp";
-        File.WriteAllText(tempPath, json);
-        File.Move(tempPath, AppPaths.ConfigPath, overwrite: true);
+        lock (SaveLock)
+        {
+            AppPaths.EnsureDataDirectory();
+            var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+            var tempPath = $"{AppPaths.ConfigPath}.{Environment.ProcessId}.tmp";
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, AppPaths.ConfigPath, overwrite: true);
+        }
     }
 
     private static void MigrateLegacyConfigIfNeeded()

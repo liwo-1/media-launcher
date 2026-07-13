@@ -9,6 +9,7 @@ flowchart LR
     W[WebView2 kiosk] -->|HTTP :8088| A
     H[Home Assistant Ingress] --> A
     A -->|Plex API + token| P[Plex Media Server]
+    A -->|One-time /pair while agent is empty| G
     A -->|Bearer-authenticated /play + /status| G[Windows player-agent :7777]
     G -->|Process arguments| M[MPC-HC]
     M -->|SMB / UNC file access| N[NAS]
@@ -30,6 +31,10 @@ household controls remain open by design. The Plex token is never returned to th
 The .NET 8 WinForms application hosts both WebView2 and a small Kestrel server. The server validates
 the bearer secret and media path before `MpcLauncher` starts MPC-HC. MPC status is read only from
 MPC-HC's localhost Web Interface. Configuration and logs live under the current user's LocalAppData.
+
+On first setup, the add-on generates and persists a random key, then posts it to the agent's
+one-time `/pair` endpoint. The agent accepts that endpoint only while it has no key. Once paired,
+remote re-pairing is rejected; clearing the key requires the local Windows Settings dialog.
 
 ## Playback sequence
 

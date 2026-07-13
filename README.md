@@ -13,6 +13,18 @@ Watching" row and per-show progress, and can write progress *back* to Plex from 
 through this launcher (see "Playback monitoring" below) - not building a separate tracking system,
 just using Plex's own.
 
+## Release channels
+
+Home Assistant can track two branches from this repository as separate app sources:
+
+- **Stable:** `https://github.com/liwo-1/media-launcher`
+- **Beta:** `https://github.com/liwo-1/media-launcher#beta`
+
+Add the wanted URL under Settings → Apps → App Store → Repositories. The beta channel contains
+prerelease changes for testing before they are promoted to `main`. If stable and beta are installed
+at the same time, assign different exposed host ports. The Windows player agent keeps one pairing,
+so switching channels also requires **Reset pairing** in its local Settings dialog.
+
 ## Two pieces
 
 - **`addon/`** - deployed as a Home Assistant local add-on. Talks to your existing Plex server's
@@ -25,8 +37,8 @@ just using Plex's own.
 
 ### player-agent-app features
 
-- **First-run Settings dialog** - Home Assistant add-on URL, player agent port, shared secret,
-  allowed UNC media roots, optional MPC-HC path override, and "Start with Windows" checkbox.
+- **First-run Settings dialog** - Home Assistant add-on URL, player agent port, automatic pairing
+  status, allowed UNC media roots, optional MPC-HC path override, and "Start with Windows" checkbox.
   Reopen any time from the tray icon.
 - **MPC-HC auto-detection** - checks the Windows registry and default install paths live as you
   open Settings; shows a **Browse...** button and a download link if it can't find MPC-HC.
@@ -71,8 +83,12 @@ dotnet publish -c Release
 Copy just that one file to the media PC and run it. First launch shows the Settings dialog. Fill in:
 
 - The Home Assistant add-on URL from step 3, e.g. `http://<ha-host-ip>:8088`.
-- The shared secret shown on the add-on Settings page.
 - Every UNC root the player may open, one per line, e.g. `\\nas-host\share\Movies`.
+
+The player starts unpaired and rejects playback until the add-on connects. Once its URL is saved
+in the add-on, the two components exchange a random key automatically. An established pairing
+cannot be replaced over the network; use **Reset pairing** in the player's local Settings dialog
+only when reinstalling one side or recovering from a mismatched configuration.
 
 The player rejects URLs, local paths, paths outside these roots, and unsupported media extensions.
 
@@ -99,22 +115,20 @@ different, adjust the field list there.
 2. Open its web UI (Ingress panel in the HA sidebar, or `http://<ha-host-ip>:8088` directly) - with
    nothing configured yet it lands straight on the **Settings** page. All configuration now lives
    there instead of the add-on's Configuration tab:
-   - **Plex server URL** - Plex's reachable address from the HA host (default port 32400, e.g.
-     `http://<nas-ip>:32400`).
-   - **Player agent URL** - `http://<media-pc-ip>:7777`.
-   - **Admin PIN** - 4 to 12 digits. This protects Settings and Plex account linking while normal
-     household browsing and playback remain login-free. The browser remembers the PIN locally.
-   - **Player agent shared secret** - copy this value into player-agent-app. Regenerating it
-     immediately invalidates the old value.
+   - **Plex Account** - click "Link with Plex", then enter the 4-character code shown at
+     [plex.tv/link](https://plex.tv/link) on any device. The add-on polls and stores the token
+     itself (in its persistent `/data` storage) - no token to copy-paste.
    - **Library path mapping** - one row per library folder. Click **Discover from Plex** to
      auto-fill the *from* side straight from Plex's own API (one row per physical folder, labeled
      with the library name - handles libraries backed by more than one folder too); only the *to*
      side (the Windows UNC path reachable from the media PC) needs typing by hand. See the comment
      in `addon/app/src/pathmap.js` for the forward-slash convention, though the Settings form
      itself tolerates either slash direction on the *to* side.
-   - **Plex Account** - click "Link with Plex", then enter the 4-character code shown at
-     [plex.tv/link](https://plex.tv/link) on any device. The add-on polls and stores the token
-     itself (in its persistent `/data` storage) - no token to copy-paste.
+   - **Connections** - set Plex's reachable address from the HA host (usually port 32400) and the
+     player agent URL, e.g. `http://<media-pc-ip>:7777`.
+   - **Security** - set a 4-to-12-digit admin PIN. This protects Settings and Plex account linking
+     while normal household browsing and playback remain login-free. Player pairing happens
+     silently after Save and its status appears here.
    - Click **Save**.
 
 Test the full chain with a real item before building out the browsing UI further:
@@ -126,8 +140,8 @@ Invoke-RestMethod -Uri "http://<ha-host-ip>:8088/api/play/<a-real-plex-ratingKey
 (Copy a `ratingKey` from Plex Web's URL bar when viewing an item.)
 
 Once the add-on's confirmed working, open player-agent-app's Settings (tray icon) and make sure
-the Home Assistant add-on URL and shared secret match and the UNC roots cover every mapped path,
-then Save - the kiosk view reloads to show it immediately.
+pairing says **Paired** and the UNC roots cover every mapped path, then Save - the kiosk view
+reloads to show it immediately.
 If "Start with Windows" was checked, reboot the media PC and confirm it comes back up fullscreen
 on the library grid with no manual steps.
 

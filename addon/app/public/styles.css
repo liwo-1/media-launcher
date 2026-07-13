@@ -367,7 +367,8 @@ body {
   margin-bottom: 1rem;
 }
 
-.settings-section input[type='text'] {
+.settings-section input[type='text'],
+.settings-section input[type='password'] {
   display: block;
   width: 100%;
   margin-top: 0.4rem;
@@ -379,7 +380,8 @@ body {
   font-size: 1rem;
 }
 
-.settings-section input[type='text']:focus {
+.settings-section input[type='text']:focus,
+.settings-section input[type='password']:focus {
   outline: none;
   border-color: var(--amber);
 }
@@ -391,15 +393,18 @@ body {
   margin-bottom: 1rem;
 }
 
-.secret-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 8px;
-  margin-top: 8px;
+.pairing-status {
+  margin-top: 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.95rem;
 }
 
-.secret-row input {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+.pairing-status.paired {
+  color: #72d39b;
+}
+
+.pairing-status.error {
+  color: #ff6b6b;
 }
 
 .pathmap-row {

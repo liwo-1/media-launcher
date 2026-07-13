@@ -1,14 +1,19 @@
 const express = require('express');
 const { readSettings, writeSettings } = require('../settings-store');
 const { hashPin } = require('../admin-auth');
-const { generatePlayerAgentSecret } = require('../agent-config');
+const { pairPlayerAgent } = require('../agent-config');
 const plex = require('../plex');
 
 const router = express.Router();
 
 function publicSettings(settings = readSettings()) {
-  const { adminPinHash, ...publicValues } = settings;
-  return { ...publicValues, adminPinConfigured: Boolean(adminPinHash), plexLinked: plex.hasToken() };
+  const { adminPinHash, playerAgentSecret, ...publicValues } = settings;
+  return {
+    ...publicValues,
+    adminPinConfigured: Boolean(adminPinHash),
+    playerAgentKeyConfigured: Boolean(playerAgentSecret),
+    plexLinked: plex.hasToken(),
+  };
 }
 
 function isHttpUrl(value) {
@@ -22,12 +27,7 @@ function isHttpUrl(value) {
 }
 
 router.get('/', (_req, res) => {
-  let settings = readSettings();
-  if (!settings.playerAgentSecret) {
-    generatePlayerAgentSecret();
-    settings = readSettings();
-  }
-  res.json(publicSettings(settings));
+  res.json(publicSettings());
 });
 
 router.get('/plex-libraries', async (_req, res) => {
@@ -79,8 +79,12 @@ router.post('/', (req, res) => {
   res.json(publicSettings(settings));
 });
 
-router.post('/player-secret/regenerate', (_req, res) => {
-  res.json({ playerAgentSecret: generatePlayerAgentSecret() });
+router.post('/player-agent/pair', async (_req, res) => {
+  try {
+    res.json(await pairPlayerAgent());
+  } catch (err) {
+    res.status(502).json({ error: err.message, paired: false, state: 'error' });
+  }
 });
 
 module.exports = router;

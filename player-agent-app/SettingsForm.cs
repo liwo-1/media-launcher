@@ -12,7 +12,8 @@ public class SettingsForm : Form
 
     private readonly TextBox _urlBox = new() { Dock = DockStyle.Fill };
     private readonly NumericUpDown _portBox = new() { Minimum = 1, Maximum = 65535, Width = 90 };
-    private readonly TextBox _sharedSecretBox = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
+    private readonly Label _pairingStatusLabel = new() { AutoSize = true };
+    private readonly Button _resetPairingButton = new() { Text = "Reset pairing", AutoSize = true };
     private readonly TextBox _allowedRootsBox = new()
     {
         Dock = DockStyle.Fill,
@@ -26,6 +27,7 @@ public class SettingsForm : Form
     private readonly Label _mpcStatusLabel = new() { AutoSize = true, MaximumSize = new Size(380, 0) };
     private readonly LinkLabel _mpcInstallLink = new() { AutoSize = true, Text = "Download MPC-HC", Visible = false };
     private readonly CheckBox _startWithWindowsBox = new() { Text = "Start with Windows", AutoSize = true };
+    private bool _resetPairingRequested;
 
     private readonly TextBox _logBox = new()
     {
@@ -50,10 +52,14 @@ public class SettingsForm : Form
 
         _urlBox.Text = config.HomeAssistantUrl;
         _portBox.Value = config.Port;
-        _sharedSecretBox.Text = config.SharedSecret;
         _allowedRootsBox.Lines = config.AllowedMediaRoots;
         _mpcPathBox.Text = config.MpcPathOverride ?? "";
         _startWithWindowsBox.Checked = config.StartWithWindows;
+        _pairingStatusLabel.Text = string.IsNullOrEmpty(config.SharedSecret)
+            ? "Waiting for Home Assistant to pair automatically"
+            : "✓ Paired";
+        _pairingStatusLabel.ForeColor = string.IsNullOrEmpty(config.SharedSecret) ? Color.DarkOrange : Color.SeaGreen;
+        _resetPairingButton.Enabled = !string.IsNullOrEmpty(config.SharedSecret);
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var settingsTab = new TabPage("Settings");
@@ -112,7 +118,7 @@ public class SettingsForm : Form
             {
                 HomeAssistantUrl = _urlBox.Text.Trim(),
                 Port = (int)_portBox.Value,
-                SharedSecret = _sharedSecretBox.Text.Trim(),
+                SharedSecret = _resetPairingRequested ? "" : Config.SharedSecret,
                 AllowedMediaRoots = allowedRoots,
                 MpcPathOverride = string.IsNullOrWhiteSpace(_mpcPathBox.Text) ? null : _mpcPathBox.Text.Trim(),
                 StartWithWindows = _startWithWindowsBox.Checked,
@@ -159,8 +165,31 @@ public class SettingsForm : Form
         layout.Controls.Add(FieldLabel("Player agent port:"), 0, 1);
         layout.Controls.Add(_portBox, 1, 1);
 
-        layout.Controls.Add(FieldLabel("Shared secret:"), 0, 2);
-        layout.Controls.Add(_sharedSecretBox, 1, 2);
+        layout.Controls.Add(FieldLabel("Home Assistant pairing:"), 0, 2);
+        var pairingRow = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = new Padding(3, 6, 3, 6),
+        };
+        pairingRow.Controls.Add(_pairingStatusLabel);
+        pairingRow.Controls.Add(_resetPairingButton);
+        layout.Controls.Add(pairingRow, 1, 2);
+
+        _resetPairingButton.Click += (_, _) =>
+        {
+            if (MessageBox.Show(
+                    "Reset pairing? Playback will be unavailable until Home Assistant pairs again.",
+                    "Reset Home Assistant pairing",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning) != DialogResult.Yes) return;
+
+            _resetPairingRequested = true;
+            _pairingStatusLabel.Text = "Pairing will reset when Settings is saved";
+            _pairingStatusLabel.ForeColor = Color.DarkOrange;
+            _resetPairingButton.Enabled = false;
+        };
 
         layout.Controls.Add(FieldLabel("Allowed UNC media roots:"), 0, 3);
         layout.Controls.Add(_allowedRootsBox, 1, 3);
