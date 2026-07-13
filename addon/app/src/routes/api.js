@@ -128,6 +128,7 @@ router.post('/play/:id', async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     const status = err instanceof PlayError ? err.status : 502;
+    console.error(`play failed for item ${req.params.id}: ${err.message}`);
     res.status(status).json({ error: err.message });
   }
 });
