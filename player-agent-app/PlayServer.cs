@@ -102,7 +102,7 @@ public static class PlayServer
                 }
 
                 Logger.Log($"/pair: paired with Home Assistant at {ctx.Connection.RemoteIpAddress}");
-                return Results.Json(new { paired = true });
+                return Results.Json(new { paired = true, instanceId = activeConfig.InstanceId });
             }
             catch (Exception ex)
             {
@@ -162,7 +162,12 @@ public static class PlayServer
             }
         });
 
-        app.MapGet("/health", () => Results.Json(new { ok = true, paired = !string.IsNullOrEmpty(_config.SharedSecret) }));
+        app.MapGet("/health", () => Results.Json(new
+        {
+            ok = true,
+            paired = !string.IsNullOrEmpty(_config.SharedSecret),
+            protocolVersion = 1,
+        }));
         await app.StartAsync();
         return app;
     }

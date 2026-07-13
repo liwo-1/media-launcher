@@ -9,6 +9,7 @@ const DEFAULTS = {
   plexUrl: '',
   playerAgentUrl: '',
   playerAgentSecret: '',
+  playerAgentInstanceId: '',
   adminPinHash: '',
   pathMap: [],
 };

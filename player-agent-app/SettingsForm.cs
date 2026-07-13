@@ -118,6 +118,7 @@ public class SettingsForm : Form
             {
                 HomeAssistantUrl = _urlBox.Text.Trim(),
                 Port = (int)_portBox.Value,
+                InstanceId = Config.InstanceId,
                 SharedSecret = _resetPairingRequested ? "" : Config.SharedSecret,
                 AllowedMediaRoots = allowedRoots,
                 MpcPathOverride = string.IsNullOrWhiteSpace(_mpcPathBox.Text) ? null : _mpcPathBox.Text.Trim(),

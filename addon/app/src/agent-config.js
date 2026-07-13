@@ -103,7 +103,12 @@ async function pairPlayerAgent() {
   }
 
   const body = await readResponseBody(response);
-  if (response.ok) return { paired: true, state: 'paired', alreadyPaired: false };
+  if (response.ok) {
+    if (typeof body.instanceId === 'string' && /^[a-f0-9]{32}$/i.test(body.instanceId)) {
+      writeSettings({ playerAgentInstanceId: body.instanceId.toLowerCase() });
+    }
+    return { paired: true, state: 'paired', alreadyPaired: false };
+  }
   if (response.status === 409) {
     throw new Error('The player agent is paired to a different key. Reset pairing in its Windows Settings, then reload this page.');
   }

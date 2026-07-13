@@ -9,7 +9,8 @@ flowchart LR
     W[WebView2 kiosk] -->|HTTP :8088| A
     H[Home Assistant Ingress] --> A
     A -->|Plex API + token| P[Plex Media Server]
-    A -->|One-time /pair while agent is empty| G
+    G -->|Directed /register + installation ID| A
+    A -.->|Compatibility /pair fallback| G
     A -->|Bearer-authenticated /play + /status| G[Windows player-agent :7777]
     G -->|Process arguments| M[MPC-HC]
     M -->|SMB / UNC file access| N[NAS]
@@ -23,8 +24,9 @@ adapter, `pathmap.js` translates Plex paths into approved Windows paths, and
 `playback-monitor.js` owns the single active playback session. Persistent data lives in `/data` in
 Home Assistant and `addon/app/local-data` during local development.
 
-Settings and Plex linking require the admin PIN once configured. Normal library browsing and
-household controls remain open by design. The Plex token is never returned to the browser.
+Settings and Plex linking require the optional admin PIN once configured. Normal library browsing,
+household controls, and component registration remain open by design. The Plex token and player
+secret are never returned to the browser.
 
 ## Windows player-agent
 
@@ -32,9 +34,11 @@ The .NET 8 WinForms application hosts both WebView2 and a small Kestrel server. 
 the bearer secret and media path before `MpcLauncher` starts MPC-HC. MPC status is read only from
 MPC-HC's localhost Web Interface. Configuration and logs live under the current user's LocalAppData.
 
-On first setup, the add-on generates and persists a random key, then posts it to the agent's
-one-time `/pair` endpoint. The agent accepts that endpoint only while it has no key. Once paired,
-remote re-pairing is rejected; clearing the key requires the local Windows Settings dialog.
+On first setup, the agent posts its protocol, listening port, and persistent random installation ID
+to `/api/player-agent/register` at the one add-on URL configured by the user. The add-on derives the
+agent host from the connection source, generates the shared key, and binds it to that installation.
+It accepts refresh/recovery from the same installation and rejects a different one. The original
+add-on-initiated `/pair` endpoint remains as a compatibility fallback.
 
 ## Playback sequence
 

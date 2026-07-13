@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.0-beta.1 — 2026-07-14
+
+- Made the admin PIN optional, including an explicit **Disable admin PIN** action for existing
+  installations. When enabled, it still protects Settings and Plex account linking.
+- Removed the player pairing flow from the admin-PIN gate.
+- Added directed, zero-touch registration: the Windows agent contacts only its configured Home
+  Assistant add-on URL, and the add-on learns the agent address and exchanges the secret.
+- Bound registration to a persistent random agent installation ID. The same installation can
+  recover its pairing, while a different installation cannot silently replace it.
+- Kept the existing add-on-to-agent `/pair` flow as a compatibility fallback.
+
 ## 1.6.0 — 2026-07-14
 
 - Added silent, one-time pairing between the Home Assistant add-on and Windows player agent.

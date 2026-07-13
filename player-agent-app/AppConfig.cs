@@ -10,6 +10,7 @@ public class AppConfig
     public int Port { get; set; } = 7777;
     public string? MpcPathOverride { get; set; }
     public bool StartWithWindows { get; set; } = false;
+    public string InstanceId { get; set; } = Guid.NewGuid().ToString("N");
     public string SharedSecret { get; set; } = "";
     public string[] AllowedMediaRoots { get; set; } = [];
 

@@ -1,13 +1,12 @@
 const express = require('express');
 const { readSettings, writeSettings } = require('../settings-store');
 const { hashPin } = require('../admin-auth');
-const { pairPlayerAgent } = require('../agent-config');
 const plex = require('../plex');
 
 const router = express.Router();
 
 function publicSettings(settings = readSettings()) {
-  const { adminPinHash, playerAgentSecret, ...publicValues } = settings;
+  const { adminPinHash, playerAgentSecret, playerAgentInstanceId, ...publicValues } = settings;
   return {
     ...publicValues,
     adminPinConfigured: Boolean(adminPinHash),
@@ -70,21 +69,13 @@ router.post('/', (req, res) => {
   if (pathMap !== undefined) patch.pathMap = pathMap;
   if (newAdminPin !== undefined) patch.adminPinHash = hashPin(newAdminPin);
 
-  const existing = readSettings();
-  if (!existing.adminPinHash && newAdminPin === undefined) {
-    return res.status(400).json({ error: 'Set a 4 to 12 digit admin PIN before saving settings' });
-  }
-
   const settings = writeSettings(patch);
   res.json(publicSettings(settings));
 });
 
-router.post('/player-agent/pair', async (_req, res) => {
-  try {
-    res.json(await pairPlayerAgent());
-  } catch (err) {
-    res.status(502).json({ error: err.message, paired: false, state: 'error' });
-  }
+router.post('/admin-pin/disable', (_req, res) => {
+  const settings = writeSettings({ adminPinHash: '' });
+  res.json(publicSettings(settings));
 });
 
 module.exports = router;

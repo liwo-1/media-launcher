@@ -60,11 +60,15 @@ internal static class Program
             return;
         }
 
-        using (var mainForm = new MainForm(config))
+        using var shutdown = new CancellationTokenSource();
+        PairingClient.Start(config, shutdown.Token);
+
+        using (var mainForm = new MainForm(config, shutdown.Token))
         {
             Application.Run(mainForm);
         }
 
+        shutdown.Cancel();
         app.StopAsync().GetAwaiter().GetResult();
         Logger.Log("--- exited ---");
     }
