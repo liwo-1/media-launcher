@@ -1,15 +1,34 @@
-const PLEX_URL = process.env.PLEX_URL;
-const PLEX_TOKEN = process.env.PLEX_TOKEN;
+const { getStoredToken } = require('./token-store');
 
-if (!PLEX_URL || !PLEX_TOKEN) {
-  throw new Error('PLEX_URL and PLEX_TOKEN must both be set (add-on options).');
+const PLEX_URL = process.env.PLEX_URL;
+
+// A token set directly in add-on options wins; otherwise fall back to one obtained via the PIN
+// linking flow (src/plex-auth.js) and persisted to /data.
+let currentToken = process.env.PLEX_TOKEN || getStoredToken() || null;
+
+function setToken(token) {
+  currentToken = token;
+}
+
+function hasToken() {
+  return Boolean(currentToken);
 }
 
 async function plexFetch(path, { binary = false, parseJson = true } = {}) {
+  if (!PLEX_URL) {
+    const err = new Error('PLEX_URL is not configured (add-on Configuration tab).');
+    err.status = 400;
+    throw err;
+  }
+  if (!currentToken) {
+    const err = new Error('Plex account is not linked yet.');
+    err.status = 401;
+    throw err;
+  }
   const url = `${PLEX_URL}${path}`;
   const response = await fetch(url, {
     headers: {
-      'X-Plex-Token': PLEX_TOKEN,
+      'X-Plex-Token': currentToken,
       Accept: 'application/json',
     },
   });
@@ -102,6 +121,8 @@ function reportTimeline(ratingKey, state, timeMs, durationMs) {
 }
 
 module.exports = {
+  setToken,
+  hasToken,
   getSections,
   getItems,
   getSeasons,

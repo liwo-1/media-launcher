@@ -58,6 +58,18 @@ const api = {
     return api._post(`/api/libraries/${libraryKey}/scan`);
   },
 
+  async getPlexAuthStatus() {
+    return api._get('/api/plex-auth/status');
+  },
+
+  async requestPlexPin() {
+    return api._post('/api/plex-auth/pin');
+  },
+
+  async checkPlexPin(id) {
+    return api._get(`/api/plex-auth/pin/${id}`);
+  },
+
   async _post(path) {
     const response = await fetch(path, { method: 'POST' });
     const body = await response.json().catch(() => ({}));

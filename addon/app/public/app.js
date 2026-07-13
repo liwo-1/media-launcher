@@ -313,8 +313,29 @@ function router() {
   return renderHomeMovies();
 }
 
-window.addEventListener('hashchange', router);
-window.addEventListener('DOMContentLoaded', () => {
+async function bootstrap() {
+  let status;
+  try {
+    status = await api.getPlexAuthStatus();
+  } catch {
+    status = { linked: true }; // don't block startup on this check failing; routes will surface the real error
+  }
+
+  if (!status.linked) {
+    document.getElementById('nav').style.display = 'none';
+    try {
+      const pin = await api.requestPlexPin();
+      appEl.innerHTML = '';
+      appEl.appendChild(renderLinkView(pin, () => window.location.reload()));
+    } catch (err) {
+      appEl.innerHTML = `<p class="error">${err.message}</p>`;
+    }
+    return;
+  }
+
   router();
   setupSidebarScanButtons();
-});
+}
+
+window.addEventListener('hashchange', router);
+window.addEventListener('DOMContentLoaded', bootstrap);

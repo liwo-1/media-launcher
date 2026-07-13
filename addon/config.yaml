@@ -11,6 +11,8 @@ ports:
   8088/tcp: 8088
 options:
   plex_url: "http://CHANGE_ME:32400"
+  # Leave blank and use the in-app "Link your Plex account" prompt (Plex's official PIN-linking
+  # flow) instead of pasting a token here manually - either way works.
   plex_token: ""
   player_agent_url: "http://CHANGE_ME:7777"
   # "from" must match the path Plex itself reports for the library (check Plex web UI ->
@@ -28,7 +30,7 @@ options:
       to: "//CHANGE_ME/share/tv"
 schema:
   plex_url: url
-  plex_token: str
+  plex_token: str?
   player_agent_url: url
   path_map:
     - from: str
