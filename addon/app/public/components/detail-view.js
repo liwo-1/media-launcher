@@ -175,7 +175,16 @@ function renderMovieDetail(item, onPlay, onToggleWatched) {
   overview.textContent = item.summary || '';
   info.appendChild(overview);
 
-  info.innerHTML += renderTechSpecs(item);
+  const techSpecsHtml = renderTechSpecs(item);
+  if (techSpecsHtml) {
+    // Never `info.innerHTML += ...` here: that serializes the whole subtree back to a string and
+    // reparses it, silently destroying every addEventListener listener already attached inside it
+    // (the Play and Mark-watched buttons above) even though the resulting markup looks identical.
+    // A <template> parses the string into real nodes without touching info's existing children.
+    const template = document.createElement('template');
+    template.innerHTML = techSpecsHtml;
+    info.appendChild(template.content);
+  }
 
   el.append(poster, info);
   wrap.appendChild(el);

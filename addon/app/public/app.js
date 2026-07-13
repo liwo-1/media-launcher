@@ -174,7 +174,13 @@ async function renderLibraryHome(section) {
     const items = await api.getItems(section.key);
     appEl.appendChild(renderPosterGrid(items.Items, onSelect));
   } catch (err) {
-    appEl.innerHTML += `<p class="error">${err.message}</p>`;
+    // appendChild, not `appEl.innerHTML += ...` - that would reserialize and reparse appEl's
+    // existing children (e.g. an already-rendered Continue Watching row), silently detaching any
+    // addEventListener listeners already attached to them.
+    const errorEl = document.createElement('p');
+    errorEl.className = 'error';
+    errorEl.textContent = err.message;
+    appEl.appendChild(errorEl);
   }
 }
 
