@@ -110,8 +110,8 @@ const api = {
     return api._getAdmin('api/settings/plex-libraries');
   },
 
-  async regeneratePlayerAgentSecret() {
-    return api._postAdmin('api/settings/player-secret/regenerate');
+  async pairPlayerAgent() {
+    return api._postAdmin('api/settings/player-agent/pair');
   },
 
   async saveSettings(settings) {

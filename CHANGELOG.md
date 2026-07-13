@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.0 — 2026-07-14
+
+- Added silent, one-time pairing between the Home Assistant add-on and Windows player agent.
+- Made the unpaired player fail closed for `/play` and `/status`; remote requests cannot replace
+  an established pairing, and recovery requires a local reset in the Windows Settings dialog.
+- Removed shared-secret display, copying, regeneration, and manual entry from both settings UIs.
+- Reordered Settings to Plex Account, Library Path Mapping, Connections, then Security.
+- Styled the admin-PIN password field consistently with the dark application theme.
+
 ## 1.5.0 — 2026-07-13
 
 - Added admin-PIN protection for Settings and Plex account linking.

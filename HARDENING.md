@@ -46,15 +46,15 @@ Once Phase 3 is done, un-gitignore and commit it.
       NTLM-hash-capture vector, not just a nuisance.
       `player-agent-app/PlayServer.cs:23,28-62`, `player-agent-app/MpcLauncher.cs:31-37`
   > **Approach:** addon generates a random secret (`crypto.randomBytes(24).toString('hex')`),
-  > stored as a new `playerAgentSecret` field in `settings-store.js`, with a "regenerate" action
-  > on the Settings page. Same value pasted into a new `SharedSecret` field in player-agent-app's
-  > `AppConfig`/`SettingsForm.cs`. Addon sends `Authorization: Bearer <secret>` on every request
+  > stores it as `playerAgentSecret`, and sends it once to the agent's `/pair` endpoint. The agent
+  > accepts pairing only while its `SharedSecret` is empty and rejects remote renegotiation after
+  > that; recovery requires a local reset in `SettingsForm.cs`. The addon sends
+  > `Authorization: Bearer <secret>` on every request
   > to player-agent (`play.js`'s fetch, and the new `getPlayerStatus()` fetch in
   > `playback-monitor.js`). `PlayServer.cs` validates via
   > `CryptographicOperations.FixedTimeEquals` (constant-time), returns 401 on mismatch/missing.
-  > Leave `/health` open (no side effects). **Fail-closed once a secret exists; while
-  > `SharedSecret` is empty (fresh install), allow unauthenticated** — matches today's
-  > "nothing works until configured" bootstrap, no regression during first-time setup.
+  > Leave `/health` open (no side effects). `/play` and `/status` fail closed while unpaired;
+  > only the one-time `/pair` bootstrap endpoint remains available.
   >
   > Why a shared secret over IP-allowlisting or mTLS: IP-allowlisting is weak on a typical DHCP
   > home LAN (phone/kiosk IPs roam) and doesn't stop a same-segment attacker; mTLS needs
@@ -188,6 +188,8 @@ actually delivers a working URL.)
   IP-allowlisting is weak on DHCP home LANs (roaming IPs) and doesn't stop a same-segment
   attacker; mTLS needs cert infra disproportionate to a personal LAN tool. PSK matches the
   pairing UX pattern of plenty of LAN IoT devices and needs no new dependency in either stack.
+- **2026-07-14** — Replaced manual secret copy/paste with silent first-connection pairing. The
+  agent accepts one key only while unpaired and requires a local reset before any later pairing.
 - **2026-07-13** — Chose admin-PIN gating over full login for the addon's own API: the explicit
   desired UX is "walk up and browse/play with zero login" (kiosk, phone). Only Settings-page and
   Plex-linking actions get gated; everything a household member touches during normal use stays

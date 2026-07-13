@@ -1,7 +1,7 @@
 const { getItemFull } = require('./plex');
 const { toWindowsPath } = require('./pathmap');
 const { monitorPlayback } = require('./playback-monitor');
-const { getPlayerAgentUrl, getPlayerAgentHeaders } = require('./agent-config');
+const { getPlayerAgentUrl, getPlayerAgentHeaders, pairPlayerAgent } = require('./agent-config');
 
 class PlayError extends Error {
   constructor(message, status = 502) {
@@ -30,15 +30,26 @@ async function playItem(itemId) {
     throw new PlayError(err.message);
   }
 
+  const sendPlayRequest = () => fetch(`${playerAgentUrl}/play`, {
+    method: 'POST',
+    headers: getPlayerAgentHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ path: windowsPath }),
+  });
+
   let response;
   try {
-    response = await fetch(`${playerAgentUrl}/play`, {
-      method: 'POST',
-      headers: getPlayerAgentHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ path: windowsPath }),
-    });
+    response = await sendPlayRequest();
   } catch {
     throw new PlayError("Media PC isn't reachable - is it turned on?");
+  }
+
+  if (response.status === 503) {
+    try {
+      await pairPlayerAgent();
+      response = await sendPlayRequest();
+    } catch (err) {
+      throw new PlayError(err.message || "Media PC isn't reachable - is it turned on?");
+    }
   }
 
   if (!response.ok) {

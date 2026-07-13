@@ -9,9 +9,9 @@ a new PIN from a trusted device.
 
 ## Playback returns 401
 
-The shared secrets do not match. Open the add-on Settings page, copy the player-agent shared secret,
-paste it into the Windows player's tray Settings dialog, and save. A secret change takes effect
-immediately; changing the player port still requires restarting the Windows app.
+The saved pairing keys do not match. On the media PC, open the Windows player's tray Settings,
+choose **Reset pairing**, and Save. Reload the add-on Settings page; it will pair automatically.
+Changing the player port still requires restarting the Windows app.
 
 ## Playback says the path is outside the allowed roots
 
@@ -23,7 +23,8 @@ movie filename. Local drive paths and URLs are intentionally rejected.
 
 - Confirm Windows Firewall permits inbound TCP on the configured player port from the HA host.
 - Confirm the add-on exposes port 8088 and both devices are on the same trusted network.
-- Open `http://<media-pc>:7777/health`; it should return `{ "ok": true }` without a secret.
+- Open `http://<media-pc>:7777/health`; it should return availability and pairing state without a
+  secret.
 - Inspect `%LocalAppData%\MediaLauncherPlayerAgent\player-agent.log` from the player Settings tab.
 
 ## The kiosk is blank or stale
