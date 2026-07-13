@@ -79,6 +79,10 @@ const api = {
     return api._get('api/settings');
   },
 
+  async getPlexLibraryPaths() {
+    return api._get('api/settings/plex-libraries');
+  },
+
   async saveSettings(settings) {
     const response = await fetch('api/settings', {
       method: 'POST',

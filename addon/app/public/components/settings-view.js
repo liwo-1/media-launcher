@@ -90,6 +90,10 @@ function renderPathMapRow(rule) {
   const row = document.createElement('div');
   row.className = 'pathmap-row';
 
+  const label = document.createElement('div');
+  label.className = 'pathmap-label';
+  label.textContent = rule.library || '';
+
   const fromInput = document.createElement('input');
   fromInput.type = 'text';
   fromInput.placeholder = '/volume1/video/Movies (Plex library path)';
@@ -109,17 +113,31 @@ function renderPathMapRow(rule) {
   removeBtn.textContent = '✕';
   removeBtn.addEventListener('click', () => row.remove());
 
-  row.append(fromInput, toInput, removeBtn);
+  row.append(label, fromInput, toInput, removeBtn);
   return row;
 }
 
 function collectPathMap(container) {
   return Array.from(container.querySelectorAll('.pathmap-row'))
-    .map((row) => ({
-      from: row.querySelector('[data-field="from"]').value.trim(),
-      to: row.querySelector('[data-field="to"]').value.trim(),
-    }))
+    .map((row) => {
+      const rule = {
+        from: row.querySelector('[data-field="from"]').value.trim(),
+        to: row.querySelector('[data-field="to"]').value.trim(),
+      };
+      const library = row.querySelector('.pathmap-label').textContent.trim();
+      if (library) rule.library = library;
+      return rule;
+    })
     .filter((rule) => rule.from && rule.to);
+}
+
+function removeEmptyPlaceholderRow(container) {
+  const rows = container.querySelectorAll('.pathmap-row');
+  if (rows.length !== 1) return;
+  const only = rows[0];
+  const from = only.querySelector('[data-field="from"]').value.trim();
+  const to = only.querySelector('[data-field="to"]').value.trim();
+  if (!from && !to) only.remove();
 }
 
 async function renderSettingsView() {
@@ -181,13 +199,44 @@ async function renderSettingsView() {
   const rules = settings.pathMap && settings.pathMap.length ? settings.pathMap : [{ from: '', to: '' }];
   for (const rule of rules) pathMapRows.appendChild(renderPathMapRow(rule));
 
+  const discoverBtn = document.createElement('button');
+  discoverBtn.type = 'button';
+  discoverBtn.className = 'icon-button-wide';
+  discoverBtn.textContent = 'Discover from Plex';
+  discoverBtn.title = 'Fetches each library\'s real folder path from Plex - requires the Plex URL saved and account linked above';
+  discoverBtn.addEventListener('click', async () => {
+    discoverBtn.disabled = true;
+    try {
+      const { paths } = await api.getPlexLibraryPaths();
+      removeEmptyPlaceholderRow(pathMapRows);
+      const existingFroms = new Set(
+        Array.from(pathMapRows.querySelectorAll('[data-field="from"]')).map((el) => el.value.trim())
+      );
+      let added = 0;
+      for (const { path: libraryPath, library } of paths) {
+        if (existingFroms.has(libraryPath)) continue;
+        pathMapRows.appendChild(renderPathMapRow({ from: libraryPath, to: '', library }));
+        added++;
+      }
+      showToast(
+        added
+          ? `Found ${added} library folder${added === 1 ? '' : 's'} - fill in the media PC path for each`
+          : 'No new library folders found'
+      );
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      discoverBtn.disabled = false;
+    }
+  });
+
   const addRowBtn = document.createElement('button');
   addRowBtn.type = 'button';
   addRowBtn.className = 'icon-button-wide';
   addRowBtn.textContent = '+ Add mapping';
   addRowBtn.addEventListener('click', () => pathMapRows.appendChild(renderPathMapRow({ from: '', to: '' })));
 
-  pathMapSection.append(pathMapHeading, pathMapHint, pathMapRows, addRowBtn);
+  pathMapSection.append(pathMapHeading, pathMapHint, discoverBtn, pathMapRows, addRowBtn);
 
   const saveBtn = document.createElement('button');
   saveBtn.type = 'submit';

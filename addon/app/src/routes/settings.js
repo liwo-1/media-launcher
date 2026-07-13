@@ -8,6 +8,15 @@ router.get('/', (_req, res) => {
   res.json({ ...readSettings(), plexLinked: plex.hasToken() });
 });
 
+router.get('/plex-libraries', async (_req, res) => {
+  try {
+    const paths = await plex.getLibraryPaths();
+    res.json({ paths });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
 router.post('/', (req, res) => {
   const { plexUrl, playerAgentUrl, pathMap } = req.body || {};
 

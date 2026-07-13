@@ -387,9 +387,18 @@ body {
 
 .pathmap-row {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 90px 1fr 1fr auto;
   gap: 0.5rem;
   align-items: center;
+}
+
+.pathmap-label {
+  color: var(--amber);
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-button-wide {

@@ -51,6 +51,20 @@ async function getSections() {
   return data.MediaContainer.Directory || [];
 }
 
+// Each library section reports its own root folder path(s) (a library can span more than one
+// folder) - surfacing these lets the Settings page auto-fill the "from" side of path mappings
+// instead of making the user go dig them out of the Plex web UI by hand.
+async function getLibraryPaths() {
+  const sections = await getSections();
+  const paths = [];
+  for (const section of sections) {
+    for (const location of section.Location || []) {
+      paths.push({ path: location.path, library: section.title });
+    }
+  }
+  return paths;
+}
+
 async function getItems(sectionKey) {
   const data = await plexFetch(`/library/sections/${sectionKey}/all`);
   return data.MediaContainer.Metadata || [];
@@ -129,6 +143,7 @@ module.exports = {
   hasToken,
   getPlexUrl,
   getSections,
+  getLibraryPaths,
   getItems,
   getSeasons,
   getEpisodes,
