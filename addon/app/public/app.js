@@ -305,6 +305,7 @@ function router() {
   const hash = window.location.hash || '#/home/movies';
   const [, root, param] = hash.split('/');
 
+  if (root === 'settings') return renderSettingsView();
   if (root === 'home' && param === 'tvshows') return renderHomeShows();
   if (root === 'home') return renderHomeMovies();
   if (root === 'item' && param) return renderMovieDetailView(param);
@@ -314,26 +315,19 @@ function router() {
 }
 
 async function bootstrap() {
-  let status;
+  let settings;
   try {
-    status = await api.getPlexAuthStatus();
+    settings = await api.getSettings();
   } catch {
-    status = { linked: true }; // don't block startup on this check failing; routes will surface the real error
+    settings = null; // don't block startup on this check failing; routes will surface the real error
   }
 
-  if (!status.linked) {
-    document.getElementById('nav').style.display = 'none';
-    try {
-      const pin = await api.requestPlexPin();
-      appEl.innerHTML = '';
-      appEl.appendChild(renderLinkView(pin, () => window.location.reload()));
-    } catch (err) {
-      appEl.innerHTML = `<p class="error">${err.message}</p>`;
-    }
-    return;
+  const incomplete = !settings || !settings.plexUrl || !settings.playerAgentUrl || !settings.plexLinked;
+  if (incomplete && window.location.hash !== '#/settings') {
+    window.location.hash = '#/settings'; // triggers the hashchange listener below, which calls router()
+  } else {
+    router();
   }
-
-  router();
   setupSidebarScanButtons();
 }
 

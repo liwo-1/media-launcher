@@ -1,5 +1,5 @@
 name: Media Launcher
-version: "1.1.0"
+version: "1.2.0"
 slug: media_launcher
 description: Poster-grid movie/TV browser backed by an existing Plex server's metadata, launches MPC-HC on the media PC
 arch:
@@ -7,31 +7,8 @@ arch:
 startup: application
 boot: auto
 init: false
+ingress: true
+ingress_port: 8088
+panel_icon: mdi:movie-open-outline
 ports:
   8088/tcp: 8088
-options:
-  plex_url: "http://CHANGE_ME:32400"
-  # Leave blank and use the in-app "Link your Plex account" prompt (Plex's official PIN-linking
-  # flow) instead of pasting a token here manually - either way works.
-  plex_token: ""
-  player_agent_url: "http://CHANGE_ME:7777"
-  # "from" must match the path Plex itself reports for the library (check Plex web UI ->
-  # Settings -> Libraries -> edit a library -> folder path, or the "file" field returned by
-  # GET /library/metadata/{ratingKey}). "to" is the same folder as a Windows UNC path reachable
-  # from the media PC. Use forward slashes on both sides, even for the Windows target - avoids
-  # backslash-escaping bugs across YAML -> options.json -> jq -> env var -> JSON.parse. pathmap.js
-  # converts to backslashes as the final step: "//nas-host/share/film" becomes
-  # "\\nas-host\share\film", a valid UNC path. Both values below are placeholders - fill in your
-  # own library paths and NAS host/share names after installing.
-  path_map:
-    - from: "/CHANGE_ME/movies"
-      to: "//CHANGE_ME/share/movies"
-    - from: "/CHANGE_ME/tv"
-      to: "//CHANGE_ME/share/tv"
-schema:
-  plex_url: url
-  plex_token: str?
-  player_agent_url: url
-  path_map:
-    - from: str
-      to: str

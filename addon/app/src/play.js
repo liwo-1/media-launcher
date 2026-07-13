@@ -1,12 +1,7 @@
 const { getItemFull } = require('./plex');
 const { toWindowsPath } = require('./pathmap');
 const { monitorPlayback } = require('./playback-monitor');
-
-const PLAYER_AGENT_URL = process.env.PLAYER_AGENT_URL;
-
-if (!PLAYER_AGENT_URL) {
-  throw new Error('PLAYER_AGENT_URL must be set (add-on option) - e.g. http://<media-pc-ip>:7777');
-}
+const { readSettings } = require('./settings-store');
 
 class PlayError extends Error {
   constructor(message, status = 502) {
@@ -15,7 +10,16 @@ class PlayError extends Error {
   }
 }
 
+function getPlayerAgentUrl() {
+  return process.env.PLAYER_AGENT_URL || readSettings().playerAgentUrl || null;
+}
+
 async function playItem(itemId) {
+  const playerAgentUrl = getPlayerAgentUrl();
+  if (!playerAgentUrl) {
+    throw new PlayError('Player agent URL is not configured yet - set it on the Settings page.', 400);
+  }
+
   const item = await getItemFull(itemId);
   const plexPath = item?.Media?.[0]?.Part?.[0]?.file;
 
@@ -32,7 +36,7 @@ async function playItem(itemId) {
 
   let response;
   try {
-    response = await fetch(`${PLAYER_AGENT_URL}/play`, {
+    response = await fetch(`${playerAgentUrl}/play`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: windowsPath }),

@@ -130,6 +130,10 @@ body {
   border-left-color: var(--amber);
 }
 
+.nav-item-settings {
+  margin-top: auto;
+}
+
 #nav a {
   flex: 1;
   min-width: 0;
@@ -325,39 +329,104 @@ body {
   margin-bottom: 1.2rem;
 }
 
-.link-view {
-  max-width: 480px;
-  margin: 15vh auto 0;
-  padding: 0 1.5rem;
-  text-align: center;
+.settings-view {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
 }
 
-.link-view h1 {
-  margin-bottom: 0.5rem;
-}
-
-.link-view p {
-  color: var(--text-dim);
-}
-
-.link-view a {
-  color: var(--amber);
-}
-
-.link-code {
-  margin: 1.5rem 0;
-  padding: 1rem;
+.settings-section {
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card-bg);
+}
+
+.settings-section h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.settings-section .hint {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-top: -0.5rem;
+}
+
+.settings-section label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.settings-section input[type='text'] {
+  display: block;
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.settings-section input[type='text']:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+
+.pathmap-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.pathmap-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.icon-button-wide {
+  padding: 0.6rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button-wide:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.settings-save {
+  display: block;
+  margin: 0 auto;
+}
+
+.link-code {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
   font-size: 2.5rem;
   font-weight: 700;
   letter-spacing: 0.3em;
+  text-align: center;
   color: var(--amber);
 }
 
 .link-status {
   font-size: 0.9rem;
+  color: var(--text-dim);
 }
 
 .play-button {

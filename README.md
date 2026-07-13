@@ -69,30 +69,27 @@ cd scripts
 
 ### 3. media-launcher add-on (Home Assistant)
 
-1. Get a Plex token: sign into Plex Web (app.plex.tv), open any library item, use "Get Info" →
-   "View XML" (or check any request in your browser's dev tools Network tab) and copy the
-   `X-Plex-Token` query parameter from the resulting URL. (Already-known alternative: Home
-   Assistant's own Plex integration, if set up, stores this in its config entry - `server_config`
-   under the `plex` domain in `.storage/core.config_entries` - same token works fine here too.)
-2. Confirm Plex's reachable address from the HA host (default port 32400, e.g.
-   `http://<nas-ip>:32400`).
-3. Work out your own `path_map` values (nothing real is baked into `config.yaml` - both sides are
-   placeholders you fill in via the add-on's Configuration tab after install):
-   - `from`: the path Plex itself reports for each library - check Plex web UI → Settings →
-     Libraries → edit a library → folder path (or the `file` field returned by
-     `GET /library/metadata/{ratingKey}`).
-   - `to`: the same folder as a Windows UNC path reachable from the media PC (the actual NAS
-     host/share name) - see the comment in `addon/app/src/pathmap.js` for the forward-slash
-     convention (forward slashes on both sides, even for the Windows target).
-4. Install the add-on: place `addon/` on the HA host under its local add-ons directory (typically
-   `/addons/local/media-launcher/`, reachable via the Samba share the same way the main HA config
-   is), then Settings → Add-ons → Add-on Store → refresh → the add-on should appear under "Local
-   add-ons". Install, then fill in its Configuration tab:
-   - `plex_url` (e.g. `http://<nas-ip>:32400`)
-   - `plex_token`
-   - `player_agent_url` (`http://<media-pc-ip>:7777`)
-   - `path_map`
-5. Start the add-on. Check its log for `media-launcher listening on 0.0.0.0:8088`.
+1. Install: Settings → Add-ons → Add-on Store → ⋮ (top right) → Repositories → add
+   `https://github.com/liwo-1/media-launcher` → refresh → "Media Launcher" appears under the new
+   repository section → Install → Start. Check its log for `media-launcher listening on
+   0.0.0.0:8088`.
+2. Open its web UI (Ingress panel in the HA sidebar, or `http://<ha-host-ip>:8088` directly) - with
+   nothing configured yet it lands straight on the **Settings** page. All configuration now lives
+   there instead of the add-on's Configuration tab:
+   - **Plex server URL** - Plex's reachable address from the HA host (default port 32400, e.g.
+     `http://<nas-ip>:32400`).
+   - **Player agent URL** - `http://<media-pc-ip>:7777`.
+   - **Library path mapping** - one row per library:
+     - *from*: the path Plex itself reports for that library - check Plex web UI → Settings →
+       Libraries → edit a library → folder path (or the `file` field returned by
+       `GET /library/metadata/{ratingKey}`).
+     - *to*: the same folder as a Windows UNC path reachable from the media PC (the actual NAS
+       host/share name) - see the comment in `addon/app/src/pathmap.js` for the forward-slash
+       convention (forward slashes on both sides, even for the Windows target).
+   - **Plex Account** - click "Link with Plex", then enter the 4-character code shown at
+     [plex.tv/link](https://plex.tv/link) on any device. The add-on polls and stores the token
+     itself (in its persistent `/data` storage) - no token to copy-paste.
+   - Click **Save**.
 
 Test the full chain with a real item before building out the browsing UI further:
 
@@ -127,15 +124,17 @@ Both pieces can run locally for iterating on code:
 cd player-agent && npm install && copy .env.example .env && npm start
 
 # addon backend + frontend
-cd addon\app && npm install
-# create a .env with PLEX_URL / PLEX_TOKEN / PLAYER_AGENT_URL / PATH_MAP / PORT
-npm start
+cd addon\app && npm install && npm start
 ```
 
-Note: `PATH_MAP` is a JSON array in an env var - keep both `from` and `to` as forward-slash paths
-(e.g. `"to": "//nas/Movies"`), never literal backslashes. Backslashes don't reliably survive the
-YAML → `options.json` → `jq` → env var → `JSON.parse` chain in the real add-on, and the same applies
-to hand-writing a local `.env` file. `pathmap.js` converts to backslashes as the final step.
+The addon backend has no options file to create - open `http://localhost:8088` and use the
+Settings page, exactly like the real add-on (settings persist to `addon/app/local-data/`, gitignored).
+For quick one-off overrides you can also set `PLEX_URL` / `PLEX_TOKEN` / `PLAYER_AGENT_URL` /
+`PATH_MAP` / `PORT` as env vars before `npm start` - they take priority over whatever's saved.
+
+Note: `PATH_MAP` (whether saved via the Settings page or set as an env var) is a JSON array - keep
+both `from` and `to` as forward-slash paths (e.g. `"to": "//nas/Movies"`), never literal
+backslashes. `pathmap.js` converts to backslashes as the final step.
 
 ## Playback monitoring (built, needs real-world verification)
 

@@ -1,7 +1,5 @@
 FROM node:20-alpine
 
-RUN apk add --no-cache jq
-
 WORKDIR /app
 
 COPY app/package.json ./

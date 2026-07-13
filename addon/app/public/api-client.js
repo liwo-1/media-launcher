@@ -58,16 +58,33 @@ const api = {
     return api._post(`/api/libraries/${libraryKey}/scan`);
   },
 
-  async getPlexAuthStatus() {
-    return api._get('/api/plex-auth/status');
-  },
-
   async requestPlexPin() {
     return api._post('/api/plex-auth/pin');
   },
 
   async checkPlexPin(id) {
     return api._get(`/api/plex-auth/pin/${id}`);
+  },
+
+  async unlinkPlex() {
+    return api._post('/api/plex-auth/unlink');
+  },
+
+  async getSettings() {
+    return api._get('/api/settings');
+  },
+
+  async saveSettings(settings) {
+    const response = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body.error || `Request failed (${response.status})`);
+    }
+    return body;
   },
 
   async _post(path) {

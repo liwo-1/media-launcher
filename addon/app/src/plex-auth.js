@@ -33,4 +33,9 @@ async function checkPin(id) {
   return { linked: true };
 }
 
-module.exports = { requestPin, checkPin };
+function unlink() {
+  setStoredToken(null);
+  plex.setToken(null);
+}
+
+module.exports = { requestPin, checkPin, unlink };

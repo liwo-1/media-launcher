@@ -1,12 +1,7 @@
 const express = require('express');
 const plexAuth = require('../plex-auth');
-const plex = require('../plex');
 
 const router = express.Router();
-
-router.get('/status', (_req, res) => {
-  res.json({ linked: plex.hasToken() });
-});
 
 router.post('/pin', async (_req, res) => {
   try {
@@ -24,6 +19,11 @@ router.get('/pin/:id', async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+router.post('/unlink', (_req, res) => {
+  plexAuth.unlink();
+  res.json({ linked: false });
 });
 
 module.exports = router;
