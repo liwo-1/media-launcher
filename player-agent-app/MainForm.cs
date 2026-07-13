@@ -67,20 +67,11 @@ public class MainForm : Form
         _webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
         _webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
 
-        // The addon's JS/CSS changes on every update, but WebView2's disk cache persists in its
-        // own profile folder independent of this exe - without this, a kiosk that's been running
-        // a while (or was just reinstalled) can keep serving stale cached JS after an addon
-        // update, exactly like the movie Play button bug this uncovered. Clearing on every launch
-        // guarantees the kiosk always shows whatever's actually running on the addon.
-        try
-        {
-            await _webView.CoreWebView2.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.DiskCache);
-        }
-        catch
-        {
-            // Best-effort - an older WebView2 runtime without this API shouldn't block startup.
-        }
-
+        // Deliberately NOT clearing the disk cache here (see ReloadFreshAsync for why it exists at
+        // all) - doing it on every single startup forced a full uncached re-fetch of every JS/CSS
+        // asset on every login, which is exactly what made this feel slow to start. A stale cache
+        // is now a "hit Reload once after updating the addon" problem instead of a "every boot"
+        // cost.
         _webView.Source = new Uri(_config.HomeAssistantUrl);
     }
 
