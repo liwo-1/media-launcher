@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.6.0-beta.1 — 2026-07-14
+## 1.6.0 — 2026-07-14
 
 - Added silent, one-time pairing between the Home Assistant add-on and Windows player agent.
 - Made the unpaired player fail closed for `/play` and `/status`; remote requests cannot replace
