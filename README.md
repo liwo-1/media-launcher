@@ -54,16 +54,19 @@ just using Plex's own.
 
 ### 2. player-agent-app (media PC)
 
-Build a single-file executable:
+Download the prebuilt exe from
+[Releases](https://github.com/liwo-1/media-launcher/releases) (`MediaLauncherPlayerAgent.exe`), or
+build it yourself:
 
 ```powershell
 cd player-agent-app
 dotnet publish -c Release
 ```
 
-Output: `bin\Release\net8.0-windows\win-x64\publish\MediaLauncherPlayerAgent.exe` - copy just that
-one file to the media PC and run it. First launch shows the Settings dialog; fill in the Home
-Assistant add-on URL (step 3 below) once it's up, e.g. `http://<ha-host-ip>:8088`.
+(output: `bin\Release\net8.0-windows\win-x64\publish\MediaLauncherPlayerAgent.exe`)
+
+Copy just that one file to the media PC and run it. First launch shows the Settings dialog; fill in
+the Home Assistant add-on URL (step 3 below) once it's up, e.g. `http://<ha-host-ip>:8088`.
 
 To update later: exit the running instance from its tray icon first (Windows won't let you
 overwrite a running exe), then drop the new build in the same folder with the same filename -
