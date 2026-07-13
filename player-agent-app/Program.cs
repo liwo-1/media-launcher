@@ -13,7 +13,20 @@ internal static class Program
         Logger.Log("--- starting ---");
         ApplicationConfiguration.Initialize();
 
-        var config = AppConfig.Load();
+        AppConfig config;
+        try
+        {
+            config = AppConfig.Load();
+        }
+        catch (InvalidDataException ex)
+        {
+            MessageBox.Show(
+                $"{ex.Message}\n\nThe Settings dialog will open so you can create a new configuration.",
+                "Media Launcher configuration error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            config = new AppConfig();
+        }
 
         if (!config.IsComplete)
         {

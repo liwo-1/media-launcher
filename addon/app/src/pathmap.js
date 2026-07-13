@@ -12,8 +12,12 @@ function getRules() {
 function toWindowsPath(plexPath) {
   const rules = getRules();
   for (const { from, to } of rules) {
-    if (plexPath.startsWith(from)) {
-      const rest = plexPath.slice(from.length);
+    const normalizedFrom = from.endsWith('/') ? from.slice(0, -1) : from;
+    const isBoundaryMatch =
+      plexPath === normalizedFrom ||
+      (plexPath.startsWith(normalizedFrom) && plexPath.charAt(normalizedFrom.length) === '/');
+    if (normalizedFrom && isBoundaryMatch) {
+      const rest = plexPath.slice(normalizedFrom.length);
       return (to + rest).replace(/\//g, '\\');
     }
   }

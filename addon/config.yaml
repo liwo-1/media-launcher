@@ -1,5 +1,5 @@
 name: Media Launcher
-version: "1.4.2"
+version: "1.5.0"
 slug: media_launcher
 description: Poster-grid movie/TV browser backed by an existing Plex server's metadata, launches MPC-HC on the media PC
 arch:

@@ -391,6 +391,17 @@ body {
   margin-bottom: 1rem;
 }
 
+.secret-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.secret-row input {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
 .pathmap-row {
   display: grid;
   grid-template-columns: 90px 1fr 1fr auto;

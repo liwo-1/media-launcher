@@ -12,6 +12,15 @@ public class SettingsForm : Form
 
     private readonly TextBox _urlBox = new() { Dock = DockStyle.Fill };
     private readonly NumericUpDown _portBox = new() { Minimum = 1, Maximum = 65535, Width = 90 };
+    private readonly TextBox _sharedSecretBox = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
+    private readonly TextBox _allowedRootsBox = new()
+    {
+        Dock = DockStyle.Fill,
+        Multiline = true,
+        Height = 64,
+        ScrollBars = ScrollBars.Vertical,
+        PlaceholderText = @"\\nas-host\share\Movies (one UNC root per line)",
+    };
     private readonly TextBox _mpcPathBox = new() { Dock = DockStyle.Fill };
     private readonly Button _browseButton = new() { Text = "Browse...", AutoSize = true };
     private readonly Label _mpcStatusLabel = new() { AutoSize = true, MaximumSize = new Size(380, 0) };
@@ -32,8 +41,8 @@ public class SettingsForm : Form
     {
         Config = config;
         Text = "Media Launcher - Player Agent Settings";
-        Width = 640;
-        Height = 520;
+        Width = 720;
+        Height = 640;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterScreen;
         MaximizeBox = false;
@@ -41,6 +50,8 @@ public class SettingsForm : Form
 
         _urlBox.Text = config.HomeAssistantUrl;
         _portBox.Value = config.Port;
+        _sharedSecretBox.Text = config.SharedSecret;
+        _allowedRootsBox.Lines = config.AllowedMediaRoots;
         _mpcPathBox.Text = config.MpcPathOverride ?? "";
         _startWithWindowsBox.Checked = config.StartWithWindows;
 
@@ -76,9 +87,22 @@ public class SettingsForm : Form
 
         saveButton.Click += (_, _) =>
         {
-            if (string.IsNullOrWhiteSpace(_urlBox.Text) || !Uri.TryCreate(_urlBox.Text.Trim(), UriKind.Absolute, out _))
+            if (!AppConfig.IsHttpUrl(_urlBox.Text.Trim()))
             {
-                errorLabel.Text = "Enter a valid Home Assistant add-on URL, e.g. http://192.168.1.x:8088";
+                errorLabel.Text = "Enter an http:// or https:// Home Assistant add-on URL, e.g. http://192.168.1.x:8088";
+                errorLabel.Visible = true;
+                tabs.SelectedTab = settingsTab;
+                return;
+            }
+
+            var allowedRoots = _allowedRootsBox.Lines
+                .Select(line => line.Trim().TrimEnd('\\'))
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (allowedRoots.Length == 0 || allowedRoots.Any(root => !root.StartsWith(@"\\", StringComparison.Ordinal)))
+            {
+                errorLabel.Text = @"Enter at least one UNC media root, such as \\nas-host\share\Movies.";
                 errorLabel.Visible = true;
                 tabs.SelectedTab = settingsTab;
                 return;
@@ -88,6 +112,8 @@ public class SettingsForm : Form
             {
                 HomeAssistantUrl = _urlBox.Text.Trim(),
                 Port = (int)_portBox.Value,
+                SharedSecret = _sharedSecretBox.Text.Trim(),
+                AllowedMediaRoots = allowedRoots,
                 MpcPathOverride = string.IsNullOrWhiteSpace(_mpcPathBox.Text) ? null : _mpcPathBox.Text.Trim(),
                 StartWithWindows = _startWithWindowsBox.Checked,
             };
@@ -111,12 +137,12 @@ public class SettingsForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 6,
+            RowCount = 8,
             Padding = new Padding(16),
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (var i = 0; i < 5; i++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        for (var i = 0; i < 7; i++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // keeps content pinned to the top
 
         Label FieldLabel(string text) => new()
@@ -133,7 +159,13 @@ public class SettingsForm : Form
         layout.Controls.Add(FieldLabel("Player agent port:"), 0, 1);
         layout.Controls.Add(_portBox, 1, 1);
 
-        layout.Controls.Add(FieldLabel("MPC-HC path (optional override):"), 0, 2);
+        layout.Controls.Add(FieldLabel("Shared secret:"), 0, 2);
+        layout.Controls.Add(_sharedSecretBox, 1, 2);
+
+        layout.Controls.Add(FieldLabel("Allowed UNC media roots:"), 0, 3);
+        layout.Controls.Add(_allowedRootsBox, 1, 3);
+
+        layout.Controls.Add(FieldLabel("MPC-HC path (optional override):"), 0, 4);
         var mpcPathRow = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -145,9 +177,9 @@ public class SettingsForm : Form
         mpcPathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         mpcPathRow.Controls.Add(_mpcPathBox, 0, 0);
         mpcPathRow.Controls.Add(_browseButton, 1, 0);
-        layout.Controls.Add(mpcPathRow, 1, 2);
+        layout.Controls.Add(mpcPathRow, 1, 4);
 
-        layout.Controls.Add(FieldLabel("MPC-HC status:"), 0, 3);
+        layout.Controls.Add(FieldLabel("MPC-HC status:"), 0, 5);
         var statusColumn = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -157,9 +189,9 @@ public class SettingsForm : Form
         };
         statusColumn.Controls.Add(_mpcStatusLabel);
         statusColumn.Controls.Add(_mpcInstallLink);
-        layout.Controls.Add(statusColumn, 1, 3);
+        layout.Controls.Add(statusColumn, 1, 5);
 
-        layout.Controls.Add(_startWithWindowsBox, 1, 4);
+        layout.Controls.Add(_startWithWindowsBox, 1, 6);
 
         tab.Controls.Add(layout);
 

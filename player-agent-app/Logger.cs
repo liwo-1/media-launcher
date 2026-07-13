@@ -1,11 +1,10 @@
 namespace MediaLauncherPlayerAgent;
 
-// Plain text log file next to the exe - this is a GUI app with no console attached, so without
-// this there is nowhere at all to see what went wrong when something fails.
 public static class Logger
 {
-    public static readonly string LogPath = Path.Combine(AppContext.BaseDirectory, "player-agent.log");
+    public static string LogPath => AppPaths.LogPath;
     private static readonly object Lock = new();
+    private static bool _migrationAttempted;
 
     public static void Log(string message)
     {
@@ -13,6 +12,8 @@ public static class Logger
         {
             try
             {
+                AppPaths.EnsureDataDirectory();
+                MigrateLegacyLogIfNeeded();
                 File.AppendAllText(LogPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}{Environment.NewLine}");
             }
             catch
@@ -20,5 +21,13 @@ public static class Logger
                 // Logging must never itself crash the app.
             }
         }
+    }
+
+    private static void MigrateLegacyLogIfNeeded()
+    {
+        if (_migrationAttempted) return;
+        _migrationAttempted = true;
+        if (!File.Exists(LogPath) && File.Exists(AppPaths.LegacyLogPath))
+            File.Copy(AppPaths.LegacyLogPath, LogPath);
     }
 }

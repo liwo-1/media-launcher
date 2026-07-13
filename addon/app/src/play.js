@@ -1,17 +1,13 @@
 const { getItemFull } = require('./plex');
 const { toWindowsPath } = require('./pathmap');
 const { monitorPlayback } = require('./playback-monitor');
-const { readSettings } = require('./settings-store');
+const { getPlayerAgentUrl, getPlayerAgentHeaders } = require('./agent-config');
 
 class PlayError extends Error {
   constructor(message, status = 502) {
     super(message);
     this.status = status;
   }
-}
-
-function getPlayerAgentUrl() {
-  return process.env.PLAYER_AGENT_URL || readSettings().playerAgentUrl || null;
 }
 
 async function playItem(itemId) {
@@ -38,7 +34,7 @@ async function playItem(itemId) {
   try {
     response = await fetch(`${playerAgentUrl}/play`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getPlayerAgentHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ path: windowsPath }),
     });
   } catch {

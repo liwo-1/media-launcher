@@ -115,9 +115,12 @@ function renderCastRow(item) {
   for (const person of item.Role) {
     const card = document.createElement('div');
     card.className = 'cast-member';
-    const photo = person.thumb
-      ? `<img src="${person.thumb}" alt="${escapeHtml(person.tag)}" loading="lazy" />`
-      : `<div class="cast-photo-placeholder" style="background:${colorForName(person.tag)}">${initialsForName(person.tag)}</div>`;
+    const castPhotoUrl = person.thumb && person.thumb.startsWith('/library/')
+      ? api.imageUrl(person.thumb)
+      : person.thumb;
+    const photo = castPhotoUrl
+      ? `<img src="${escapeHtml(castPhotoUrl)}" alt="${escapeHtml(person.tag)}" loading="lazy" />`
+      : `<div class="cast-photo-placeholder" style="background:${colorForName(person.tag)}">${escapeHtml(initialsForName(person.tag))}</div>`;
     card.innerHTML = `
       ${photo}
       <div class="name">${escapeHtml(person.tag)}</div>
