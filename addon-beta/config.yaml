@@ -1,7 +1,7 @@
 name: Media Launcher Beta
-version: "1.7.0"
+version: "1.8.0-beta.1"
 slug: media_launcher_beta
-description: BETA - prerelease Media Launcher builds for testing before promotion to stable
+description: BETA - test multi-device playback, player selection, and prerelease Media Launcher features
 arch:
   - amd64
 startup: application

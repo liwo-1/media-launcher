@@ -10,9 +10,17 @@ is lost, stop the add-on, remove `adminPinHash` from `/data/settings.json`, and 
 ## Playback returns 401
 
 The saved pairing keys do not match. Update both the beta add-on and beta Windows agent first. The
-agent normally recovers its pairing by registering again with the configured add-on URL. If it
-cannot, open the Windows player's tray Settings, choose **Reset pairing**, and Save. Changing the
-player port still requires restarting the Windows app.
+agent normally recovers by registering again with its configured add-on URL. For a clean recovery,
+choose **Remove device** in the add-on Settings, then open the Windows player's tray Settings,
+choose **Reset pairing**, and Save. Reset rotates the local identity because removed identities are
+intentionally blocked from silently returning. Changing the player port still requires restarting
+the Windows app.
+
+## Pairing is pending after a timeout
+
+Save Settings again to retry with the same persisted key. A lost first response does not create a
+new key, and the pending device is not offered as a playback target until authentication is
+confirmed. If the agent was deliberately removed, reset pairing locally before retrying.
 
 ## Playback says the path is outside the allowed roots
 
@@ -42,6 +50,10 @@ Relink the Plex account from Settings. If a token may be compromised, revoke it 
 again. Do not configure a public or untrusted server as the Plex URL.
 
 ## Playback monitoring verification
+
+Only targets advertising status/position/duration capabilities are monitored. In
+`1.8.0-beta.1`, that means MPC-HC; VLC, PotPlayer, and custom profiles are intentionally marked
+**launch only** and will not update Plex progress or auto-play the next episode.
 
 1. In MPC-HC, enable View → Options → Player → Web Interface on port 13579.
 2. While an item plays, open `http://localhost:13579/variables.html` on the media PC and confirm it

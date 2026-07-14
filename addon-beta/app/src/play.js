@@ -1,7 +1,11 @@
 const { getItemFull } = require('./plex');
-const { toWindowsPath } = require('./pathmap');
+const { resolveMediaPath } = require('./pathmap');
 const { monitorPlayback } = require('./playback-monitor');
-const { getPlayerAgentUrl, getPlayerAgentHeaders, pairPlayerAgent } = require('./agent-config');
+const {
+  AgentRequestError,
+  createSession,
+  resolvePlaybackTarget,
+} = require('./agent-client');
 
 class PlayError extends Error {
   constructor(message, status = 502) {
@@ -10,56 +14,48 @@ class PlayError extends Error {
   }
 }
 
-async function playItem(itemId) {
-  const playerAgentUrl = getPlayerAgentUrl();
-  if (!playerAgentUrl) {
-    throw new PlayError('Player agent URL is not configured yet - set it on the Settings page.', 400);
+async function playItem(itemId, requestedTargetId = '') {
+  let target;
+  try {
+    target = resolvePlaybackTarget(requestedTargetId);
+  } catch (err) {
+    throw new PlayError(err.message, err.status || 400);
   }
 
   const item = await getItemFull(itemId);
-  const plexPath = item?.Media?.[0]?.Part?.[0]?.file;
+  const sourcePath = item?.Media?.[0]?.Part?.[0]?.file;
+  if (!sourcePath) throw new PlayError('No playable file path returned by Plex for this item.');
 
-  if (!plexPath) {
-    throw new PlayError('No playable file path returned by Plex for this item.');
-  }
-
-  let windowsPath;
+  let targetPath;
   try {
-    windowsPath = toWindowsPath(plexPath);
+    targetPath = resolveMediaPath(sourcePath, target.agent);
   } catch (err) {
-    throw new PlayError(err.message);
+    throw new PlayError(err.message, 400);
   }
 
-  const sendPlayRequest = () => fetch(`${playerAgentUrl}/play`, {
-    method: 'POST',
-    headers: getPlayerAgentHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ path: windowsPath }),
-  });
-
-  let response;
+  let launched;
   try {
-    response = await sendPlayRequest();
-  } catch {
-    throw new PlayError("Media PC isn't reachable - is it turned on?");
+    launched = await createSession(target, {
+      path: targetPath,
+      title: item.title || '',
+      startPositionMs: item.viewOffset || 0,
+    });
+  } catch (err) {
+    if (err instanceof AgentRequestError) throw new PlayError(err.message, err.status);
+    throw new PlayError(err.message || `${target.agent.name} could not start playback.`);
   }
 
-  if (response.status === 503) {
-    try {
-      await pairPlayerAgent();
-      response = await sendPlayRequest();
-    } catch (err) {
-      throw new PlayError(err.message || "Media PC isn't reachable - is it turned on?");
-    }
-  }
+  const capabilities = new Set(target.player.capabilities);
+  const canMonitor =
+    capabilities.has('status.state') &&
+    capabilities.has('status.position') &&
+    capabilities.has('status.duration');
+  if (canMonitor) monitorPlayback(item, target, launched, targetPath);
 
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new PlayError(body.error || `player-agent returned ${response.status}`);
-  }
-
-  monitorPlayback(item);
-
-  return { path: windowsPath };
+  return {
+    targetId: target.id,
+    sessionId: launched.sessionId || undefined,
+  };
 }
 
 module.exports = { playItem, PlayError };

@@ -1,31 +1,36 @@
 const { readSettings } = require('./settings-store');
 
-// Path mapping rules: array of { from, to } pairs, edited on the Settings page and persisted to
-// /data. Both sides use forward slashes only - the final Windows path is produced by converting
-// all slashes to backslashes as the very last step, e.g. for a Synology NAS running Plex:
-// [{ "from": "/volume1/video/Movies", "to": "//nas/Movies" },
-//  { "from": "/volume1/video/TV",     "to": "//nas/TV" }]
-function getRules() {
+function legacyRules() {
   return process.env.PATH_MAP ? JSON.parse(process.env.PATH_MAP) : readSettings().pathMap;
 }
 
-function toWindowsPath(plexPath) {
-  const rules = getRules();
+function getRules(agent) {
+  return agent && Array.isArray(agent.pathMap) ? agent.pathMap : legacyRules();
+}
+
+function resolveMediaPath(sourcePath, agent) {
+  const rules = getRules(agent);
   for (const { from, to } of rules) {
     const normalizedFrom = from.endsWith('/') ? from.slice(0, -1) : from;
     const isBoundaryMatch =
-      plexPath === normalizedFrom ||
-      (plexPath.startsWith(normalizedFrom) && plexPath.charAt(normalizedFrom.length) === '/');
+      sourcePath === normalizedFrom ||
+      (sourcePath.startsWith(normalizedFrom) && sourcePath.charAt(normalizedFrom.length) === '/');
     if (normalizedFrom && isBoundaryMatch) {
-      const rest = plexPath.slice(normalizedFrom.length);
-      return (to + rest).replace(/\//g, '\\');
+      const mapped = to + sourcePath.slice(normalizedFrom.length);
+      return agent?.platform === 'linux'
+        ? mapped.replace(/\\/g, '/')
+        : mapped.replace(/\//g, '\\');
     }
   }
   throw new Error(
     rules.length === 0
-      ? 'No path mappings are configured yet - set them on the Settings page.'
-      : `No path mapping rule matches: ${plexPath}`
+      ? `No path mappings are configured for ${agent?.name || 'this player'} yet - set them on the Settings page.`
+      : `No path mapping rule matches: ${sourcePath}`
   );
 }
 
-module.exports = { toWindowsPath };
+function toWindowsPath(sourcePath) {
+  return resolveMediaPath(sourcePath, { platform: 'windows', pathMap: legacyRules() });
+}
+
+module.exports = { resolveMediaPath, toWindowsPath };

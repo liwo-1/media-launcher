@@ -21,10 +21,45 @@ public class PairRequest
     public string? Secret { get; set; }
 }
 
+public class SessionMediaRequest
+{
+    [JsonPropertyName("sourceType")]
+    public string? SourceType { get; set; }
+
+    [JsonPropertyName("path")]
+    public string? Path { get; set; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+}
+
+public class CreateSessionRequest
+{
+    [JsonPropertyName("requestId")]
+    public string? RequestId { get; set; }
+
+    [JsonPropertyName("playerId")]
+    public string? PlayerId { get; set; }
+
+    [JsonPropertyName("media")]
+    public SessionMediaRequest? Media { get; set; }
+
+    [JsonPropertyName("options")]
+    public SessionOptionsRequest? Options { get; set; }
+}
+
+public class SessionOptionsRequest
+{
+    [JsonPropertyName("fullscreen")]
+    public bool Fullscreen { get; set; } = true;
+
+    [JsonPropertyName("startPositionMs")]
+    public long StartPositionMs { get; set; }
+}
+
 public static class PlayServer
 {
     private static AppConfig _config = new();
-    private static readonly SemaphoreSlim PairingLock = new(1, 1);
 
     public static void UpdateConfig(AppConfig config) => _config = config;
 
@@ -32,7 +67,7 @@ public static class PlayServer
     {
         UpdateConfig(config);
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseUrls($"http://0.0.0.0:{config.Port}/");
+        builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(config.Port));
         builder.Logging.ClearProviders();
 
         var app = builder.Build();
@@ -78,7 +113,7 @@ public static class PlayServer
             if (secret is null || secret.Length != 48 || secret.Any(c => !Uri.IsHexDigit(c)))
                 return Results.Json(new { error = "Pairing secret must be 48 hexadecimal characters" }, statusCode: 400);
 
-            await PairingLock.WaitAsync();
+            await PairingState.MutationLock.WaitAsync();
             try
             {
                 var activeConfig = _config;
@@ -90,7 +125,9 @@ public static class PlayServer
                         statusCode: 409);
                 }
 
+                var previousRegistrationSecret = activeConfig.RegistrationSecret;
                 activeConfig.SharedSecret = secret;
+                activeConfig.RegistrationSecret = "";
                 try
                 {
                     activeConfig.Save();
@@ -98,6 +135,7 @@ public static class PlayServer
                 catch
                 {
                     activeConfig.SharedSecret = "";
+                    activeConfig.RegistrationSecret = previousRegistrationSecret;
                     throw;
                 }
 
@@ -111,7 +149,7 @@ public static class PlayServer
             }
             finally
             {
-                PairingLock.Release();
+                PairingState.MutationLock.Release();
             }
         });
 
@@ -136,8 +174,8 @@ public static class PlayServer
             try
             {
                 var activeConfig = _config;
-                await MpcLauncher.PlayAsync(filePath, activeConfig.MpcPathOverride, activeConfig.AllowedMediaRoots);
-                Logger.Log($"/play: launched MPC-HC for '{filePath}'");
+                await PlayerSessionManager.CreateAsync(null, null, filePath, activeConfig);
+                Logger.Log($"/play: launched the default player for '{filePath}'");
                 return Results.Json(new { ok = true });
             }
             catch (Exception ex)
@@ -162,11 +200,106 @@ public static class PlayServer
             }
         });
 
+        app.MapGet("/v2/info", () =>
+        {
+            var activeConfig = _config;
+            return Results.Json(new
+            {
+                agent = new
+                {
+                    instanceId = activeConfig.InstanceId,
+                    displayName = Environment.MachineName,
+                    version = AgentIdentity.Version,
+                    platform = "windows",
+                    architecture = AgentIdentity.Architecture,
+                },
+                capabilities = new[] { "players.list", "sessions.create", "sessions.status" },
+                acceptedPathKinds = new[] { "windows-unc" },
+                maxConcurrentSessions = 1,
+                defaultPlayerId = PlayerCatalog.GetDefaultPlayerId(activeConfig),
+                players = PlayerCatalog.GetDescriptors(activeConfig),
+            });
+        });
+
+        app.MapPost("/v2/sessions", async (HttpContext ctx) =>
+        {
+            CreateSessionRequest? body;
+            try
+            {
+                body = await ctx.Request.ReadFromJsonAsync<CreateSessionRequest>();
+            }
+            catch (JsonException)
+            {
+                return Results.Json(new { error = "Invalid JSON request body" }, statusCode: 400);
+            }
+
+            var media = body?.Media;
+            if (media is null || !string.Equals(media.SourceType, "file", StringComparison.OrdinalIgnoreCase))
+                return Results.Json(new { error = "Only file playback is supported" }, statusCode: 400);
+            var request = body!;
+            if (string.IsNullOrWhiteSpace(media.Path))
+                return Results.Json(new { error = "media.path is required" }, statusCode: 400);
+            if (!string.IsNullOrWhiteSpace(request.RequestId) &&
+                !Guid.TryParse(request.RequestId, out _))
+                return Results.Json(new { error = "requestId must be a UUID" }, statusCode: 400);
+
+            try
+            {
+                var session = await PlayerSessionManager.CreateAsync(
+                    request.RequestId,
+                    request.PlayerId,
+                    media.Path,
+                    _config,
+                    media.Title ?? "",
+                    Math.Max(0, request.Options?.StartPositionMs ?? 0),
+                    request.Options?.Fullscreen ?? true);
+                Logger.Log($"/v2/sessions: launched '{session.PlayerId}' for '{media.Path}'");
+                return Results.Json(new
+                {
+                    sessionId = session.SessionId,
+                    playerId = session.PlayerId,
+                    state = "starting",
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"/v2/sessions: failed for '{media.Path}': {ex}");
+                var status = ex is ArgumentException or UnauthorizedAccessException ? 400 : 500;
+                return Results.Json(new { error = ex.Message }, statusCode: status);
+            }
+        });
+
+        app.MapGet("/v2/sessions/{sessionId}", async (string sessionId) =>
+        {
+            var session = PlayerSessionManager.Find(sessionId);
+            if (session is null)
+                return Results.Json(new { error = "Playback session was not found" }, statusCode: 404);
+            try
+            {
+                var status = await session.Adapter.GetStatusAsync();
+                return Results.Json(new
+                {
+                    sessionId = session.SessionId,
+                    playerId = session.PlayerId,
+                    file = status.File,
+                    state = status.State,
+                    positionMs = status.PositionMs,
+                    durationMs = status.DurationMs,
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"/v2/sessions/{sessionId}: status failed: {ex.Message}");
+                return Results.Json(new { error = ex.Message }, statusCode: 502);
+            }
+        });
+
         app.MapGet("/health", () => Results.Json(new
         {
             ok = true,
             paired = !string.IsNullOrEmpty(_config.SharedSecret),
             protocolVersion = 1,
+            supportedProtocolVersions = new[] { 1, 2 },
         }));
         await app.StartAsync();
         return app;

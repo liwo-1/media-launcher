@@ -10,8 +10,11 @@ const DEFAULTS = {
   playerAgentUrl: '',
   playerAgentSecret: '',
   playerAgentInstanceId: '',
+  playerAgentPairingConfirmed: null,
   adminPinHash: '',
   pathMap: [],
+  defaultPlaybackTargetId: '',
+  alwaysAskPlaybackTarget: true,
 };
 
 function readSettings() {

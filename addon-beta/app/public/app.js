@@ -1,21 +1,105 @@
 const appEl = document.getElementById('app');
 const toastEl = document.getElementById('toast');
+toastEl.setAttribute('role', 'status');
+toastEl.setAttribute('aria-live', 'polite');
 
 let toastTimeout;
+let playbackRequestInFlight = false;
 function showToast(message, isError = false) {
   toastEl.textContent = message;
   toastEl.className = 'toast' + (isError ? ' error' : '');
+  toastEl.setAttribute('role', isError ? 'alert' : 'status');
+  toastEl.setAttribute('aria-live', isError ? 'assertive' : 'polite');
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => toastEl.classList.add('hidden'), 3000);
 }
 
+function showPlaybackTargetPicker(targets, defaultTargetId) {
+  return new Promise((resolve) => {
+    let selectedTarget = null;
+    const dialog = document.createElement('dialog');
+    dialog.className = 'target-picker';
+
+    const heading = document.createElement('h2');
+    heading.id = `target-picker-heading-${Date.now()}`;
+    heading.textContent = 'Where should this play?';
+    dialog.setAttribute('aria-labelledby', heading.id);
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'Choose a paired device and media player.';
+    const list = document.createElement('div');
+    list.className = 'target-picker-list';
+
+    for (const target of targets) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'target-option';
+      button.disabled = !target.online;
+
+      const title = document.createElement('span');
+      title.className = 'target-option-title';
+      title.textContent = target.name;
+      const meta = document.createElement('span');
+      meta.className = 'target-option-meta';
+      const parts = [target.platform];
+      const monitored = ['status.state', 'status.position', 'status.duration']
+        .every((capability) => target.capabilities.includes(capability));
+      if (!monitored) parts.push('Launch only');
+      if (target.id === defaultTargetId) parts.push('Default');
+      parts.push(target.online ? 'Online' : 'Offline');
+      meta.textContent = parts.join(' · ');
+      button.append(title, meta);
+      button.addEventListener('click', () => {
+        selectedTarget = target;
+        dialog.close();
+      });
+      list.appendChild(button);
+    }
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'icon-button-wide';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => dialog.close());
+
+    dialog.append(heading, hint, list, cancel);
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      resolve(selectedTarget);
+    }, { once: true });
+    document.body.appendChild(dialog);
+    dialog.showModal();
+  });
+}
+
+async function selectPlaybackTarget() {
+  const result = await api.getPlaybackTargets();
+  const decision = MediaLauncherTargetSelection.decidePlaybackTarget(result);
+  if (decision.action === 'error') throw new Error(decision.message);
+  if (decision.action === 'target') return decision.target;
+  return showPlaybackTargetPicker(result.targets, result.defaultPlaybackTargetId);
+}
+
 async function handlePlay(itemId, label) {
-  showToast(`Starting "${label}"...`);
+  if (playbackRequestInFlight) {
+    showToast('A playback choice is already in progress');
+    return;
+  }
+  playbackRequestInFlight = true;
+  showToast('Finding available players...');
   try {
-    await api.play(itemId);
-    showToast(`Now playing "${label}"`);
+    const target = await selectPlaybackTarget();
+    if (!target) {
+      showToast('Playback cancelled');
+      return;
+    }
+    showToast(`Starting "${label}" on ${target.name}...`);
+    await api.play(itemId, target.id);
+    showToast(`Now playing "${label}" on ${target.name}`);
   } catch (err) {
     showToast(err.message, true);
+  } finally {
+    playbackRequestInFlight = false;
   }
 }
 
@@ -343,7 +427,15 @@ async function bootstrap() {
     settings = null; // don't block startup on this check failing; routes will surface the real error
   }
 
-  const incomplete = !settings || !settings.plexUrl || !settings.playerAgentUrl || !settings.plexLinked;
+  const incomplete =
+    !settings ||
+    !settings.plexUrl ||
+    !settings.agents?.some((agent) =>
+      agent.paired && agent.players?.some((player) =>
+        player.available !== false && player.capabilities?.includes('play.file')
+      )
+    ) ||
+    !settings.plexLinked;
   if (incomplete && window.location.hash !== '#/settings') {
     window.location.hash = '#/settings'; // triggers the hashchange listener below, which calls router()
     return;
