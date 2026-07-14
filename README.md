@@ -28,7 +28,8 @@ Each app has its own slug, configuration, and persistent data. They can be insta
 the Windows player agent keeps one active add-on URL and pairing at a time. Use the matching beta
 agent release when testing beta features. Development continues on the `beta` Git branch; tested
 beta app snapshots are published to `addon-beta/` on `main` so Home Assistant can display both
-channels in the same catalogue.
+channels in the same catalogue. Immediately after a stable promotion both cards share the same
+tested baseline; the beta card diverges again when the next prerelease begins.
 
 ## Two pieces
 
@@ -92,10 +93,11 @@ Copy just that one file to the media PC and run it. First launch shows the Setti
 - The Home Assistant add-on URL from step 3, e.g. `http://<ha-host-ip>:8088`.
 - Every UNC root the player may open, one per line, e.g. `\\nas-host\share\Movies`.
 
-The player starts unpaired and rejects playback until the add-on connects. Once its URL is saved
-in the add-on, the two components exchange a random key automatically. An established pairing
-cannot be replaced over the network; use **Reset pairing** in the player's local Settings dialog
-only when reinstalling one side or recovering from a mismatched configuration.
+The player starts unpaired and rejects playback until registration succeeds. It contacts only the
+Home Assistant add-on URL entered above (no LAN scan or multicast discovery), and retries until the
+add-on is available. The add-on learns the player's source address, exchanges a random key, and
+remembers the player's persistent installation ID. A different installation cannot silently
+replace it. **Reset pairing** is normally only needed while troubleshooting.
 
 The player rejects URLs, local paths, paths outside these roots, and unsupported media extensions.
 
@@ -131,11 +133,12 @@ different, adjust the field list there.
      side (the Windows UNC path reachable from the media PC) needs typing by hand. See the comment
      in `addon/app/src/pathmap.js` for the forward-slash convention, though the Settings form
      itself tolerates either slash direction on the *to* side.
-   - **Connections** - set Plex's reachable address from the HA host (usually port 32400) and the
-     player agent URL, e.g. `http://<media-pc-ip>:7777`.
-   - **Security** - set a 4-to-12-digit admin PIN. This protects Settings and Plex account linking
-     while normal household browsing and playback remain login-free. Player pairing happens
-     silently after Save and its status appears here.
+   - **Connections** - set Plex's reachable address from the HA host (usually port 32400). The
+     player agent URL is filled automatically when the Windows agent registers; it remains editable
+     as a compatibility and network-troubleshooting fallback.
+   - **Security** - the 4-to-12-digit admin PIN is optional. When enabled it protects Settings and
+     Plex account linking while normal household browsing and playback remain login-free. It can
+     be disabled later, and player pairing never depends on it.
    - Click **Save**.
 
 Test the full chain with a real item before building out the browsing UI further:

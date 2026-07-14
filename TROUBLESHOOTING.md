@@ -3,15 +3,16 @@
 ## The add-on Settings page asks for a PIN
 
 Enter the admin PIN previously saved in Media Launcher, not a Home Assistant or Plex password. It
-is remembered in that browser profile. Clear the site's local storage to forget it. If the PIN is
-lost, stop the add-on, remove `adminPinHash` from `/data/settings.json`, restart, and immediately set
-a new PIN from a trusted device.
+is remembered in that browser profile. To stop requiring a PIN, authenticate once and choose
+**Disable admin PIN** in Security. Clear the site's local storage to forget a cached PIN. If the PIN
+is lost, stop the add-on, remove `adminPinHash` from `/data/settings.json`, and restart.
 
 ## Playback returns 401
 
-The saved pairing keys do not match. On the media PC, open the Windows player's tray Settings,
-choose **Reset pairing**, and Save. Reload the add-on Settings page; it will pair automatically.
-Changing the player port still requires restarting the Windows app.
+The saved pairing keys do not match. Update both the beta add-on and beta Windows agent first. The
+agent normally recovers its pairing by registering again with the configured add-on URL. If it
+cannot, open the Windows player's tray Settings, choose **Reset pairing**, and Save. Changing the
+player port still requires restarting the Windows app.
 
 ## Playback says the path is outside the allowed roots
 
@@ -23,6 +24,8 @@ movie filename. Local drive paths and URLs are intentionally rejected.
 
 - Confirm Windows Firewall permits inbound TCP on the configured player port from the HA host.
 - Confirm the add-on exposes port 8088 and both devices are on the same trusted network.
+- Confirm the Windows player's Home Assistant URL points directly to this add-on. Registration is
+  directed to that URL; it does not use mDNS or scan other devices.
 - Open `http://<media-pc>:7777/health`; it should return availability and pairing state without a
   secret.
 - Inspect `%LocalAppData%\MediaLauncherPlayerAgent\player-agent.log` from the player Settings tab.

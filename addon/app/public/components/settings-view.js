@@ -166,7 +166,7 @@ async function renderSettingsView() {
   securityHeading.textContent = 'Security';
 
   const adminPinLabel = document.createElement('label');
-  adminPinLabel.textContent = settings.adminPinConfigured ? 'Change admin PIN (optional)' : 'Set admin PIN';
+  adminPinLabel.textContent = settings.adminPinConfigured ? 'Change admin PIN (optional)' : 'Admin PIN (optional)';
   const adminPinInput = document.createElement('input');
   adminPinInput.type = 'password';
   adminPinInput.inputMode = 'numeric';
@@ -174,9 +174,31 @@ async function renderSettingsView() {
   adminPinInput.minLength = 4;
   adminPinInput.maxLength = 12;
   adminPinInput.pattern = '[0-9]{4,12}';
-  adminPinInput.placeholder = settings.adminPinConfigured ? 'Leave blank to keep the current PIN' : '4 to 12 digits';
-  adminPinInput.required = !settings.adminPinConfigured;
+  adminPinInput.placeholder = settings.adminPinConfigured ? 'Leave blank to keep the current PIN' : 'Optional, 4 to 12 digits';
+  adminPinInput.required = false;
   adminPinLabel.appendChild(adminPinInput);
+
+  const disablePinBtn = document.createElement('button');
+  disablePinBtn.type = 'button';
+  disablePinBtn.className = 'icon-button-wide';
+  disablePinBtn.textContent = 'Disable admin PIN';
+  disablePinBtn.hidden = !settings.adminPinConfigured;
+  disablePinBtn.addEventListener('click', async () => {
+    disablePinBtn.disabled = true;
+    try {
+      await api.disableAdminPin();
+      settings.adminPinConfigured = false;
+      adminPinInput.value = '';
+      adminPinInput.placeholder = 'Optional, 4 to 12 digits';
+      adminPinLabel.firstChild.textContent = 'Admin PIN (optional)';
+      disablePinBtn.hidden = true;
+      showToast('Admin PIN disabled');
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      disablePinBtn.disabled = false;
+    }
+  });
 
   const pairingLabel = document.createElement('label');
   pairingLabel.textContent = 'Player agent pairing';
@@ -188,8 +210,8 @@ async function renderSettingsView() {
   const securityHint = document.createElement('p');
   securityHint.className = 'hint';
   securityHint.textContent =
-    'The admin PIN protects settings and Plex linking. The player agent pairs automatically once and rejects remote re-pairing.';
-  securitySection.append(securityHeading, adminPinLabel, pairingLabel, securityHint);
+    'The PIN is optional and only protects settings and Plex linking when enabled. Player-agent pairing does not use the PIN.';
+  securitySection.append(securityHeading, adminPinLabel, disablePinBtn, pairingLabel, securityHint);
 
   const connSection = document.createElement('div');
   connSection.className = 'settings-section';
@@ -308,6 +330,7 @@ async function renderSettingsView() {
         adminPinInput.required = false;
         adminPinInput.placeholder = 'Leave blank to keep the current PIN';
         adminPinLabel.firstChild.textContent = 'Change admin PIN (optional)';
+        disablePinBtn.hidden = false;
       }
       showToast('Settings saved');
       await refreshPlayerAgentPairing();

@@ -11,12 +11,14 @@ public class MainForm : Form
 
     private readonly WebView2 _webView = new() { Dock = DockStyle.Fill };
     private readonly NotifyIcon _trayIcon;
+    private readonly CancellationToken _shutdownToken;
     private AppConfig _config;
 
-    public MainForm(AppConfig config)
+    public MainForm(AppConfig config, CancellationToken shutdownToken)
     {
         Instance = this;
         _config = config;
+        _shutdownToken = shutdownToken;
 
         FormBorderStyle = FormBorderStyle.None;
         WindowState = FormWindowState.Maximized;
@@ -124,6 +126,7 @@ public class MainForm : Form
         form.Config.Save();
         _config = form.Config;
         PlayServer.UpdateConfig(_config);
+        PairingClient.Start(_config, _shutdownToken);
         if (_webView.CoreWebView2 != null)
         {
             _webView.Source = new Uri(_config.HomeAssistantUrl);
