@@ -1,0 +1,761 @@
+:root {
+  --bg: #0a0a0c;
+  --bg-elevated: #17171a;
+  --card-bg: #1c1c20;
+  --text: #f2f2f2;
+  --text-dim: #a3a3a8;
+  --amber: #e5a00d;
+  --amber-hover: #f5b52e;
+  --border: #2a2a30;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Thin, dark scrollbars everywhere instead of the default OS chrome (Firefox via scrollbar-*,
+   Chrome/Edge via ::-webkit-scrollbar - covers both the kiosk browser and any dev browser). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Full-page ambient background - the item's own backdrop art, stretched and blurred, like Plex's
+   own detail pages. A fixed layer behind everything so it covers the whole viewport (not just a
+   hero box) regardless of content height or scroll position. inset is negative and larger than
+   the blur radius so the blur never samples past the image into empty space at the viewport edge.
+   Grid/browsing views clear this back to none. Blur is intentionally light enough to keep the
+   art's shapes recognizable, not a fully abstract color wash. */
+#ambient-bg {
+  position: fixed;
+  inset: -40px;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  filter: blur(25px) brightness(0.4) saturate(1.1);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+#ambient-bg.visible {
+  opacity: 1;
+}
+
+/* Film-grain/noise texture over the blurred backdrop - the "old TV" look. Deliberately a
+   separate element from #ambient-bg rather than a pseudo-element of it: #ambient-bg has a blur
+   filter, and CSS filters apply to an element's entire rendered output including pseudo-elements,
+   which would smear the grain into mush along with the image. Sitting on top, unblurred, with an
+   overlay blend mode against the blurred image and page background is what keeps it crisp. */
+#ambient-grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  mix-blend-mode: overlay;
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+#ambient-grain.visible {
+  opacity: 0.45;
+}
+
+/* Sidebar nav (desktop/TV) - glass/frosted style */
+#nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 220px;
+  background: rgba(20, 20, 24, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  z-index: 20;
+  overflow-y: auto;
+}
+
+.nav-title {
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0 1.5rem 1.25rem;
+}
+
+#nav-libraries {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  border-left: 3px solid transparent;
+}
+
+.nav-item:has(a.active) {
+  background: rgba(229, 160, 13, 0.12);
+  border-left-color: var(--amber);
+}
+
+.nav-item-settings {
+  margin-top: auto;
+}
+
+#nav a {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 0.85rem 1.5rem;
+}
+
+#nav a.active {
+  color: var(--text);
+}
+
+.nav-scan-button {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-right: 1rem;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-scan-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--amber);
+}
+
+.nav-scan-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#app {
+  margin-left: 220px;
+  padding: 1.5rem 2.5rem 4rem;
+  min-height: 100vh;
+}
+
+/* Poster grid - borderless, matching Plex's own grid: poster + text float directly on the page
+   background, no enclosing card box. */
+.poster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+.poster-card {
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.poster-card:hover,
+.poster-card:focus-visible {
+  transform: scale(1.05);
+}
+
+.poster-card .poster-wrap {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.poster-card img {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  display: block;
+  background: var(--card-bg);
+}
+
+.poster-card .count-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(10, 10, 12, 0.85);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.poster-card .progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.poster-card .progress-fill {
+  height: 100%;
+  background: var(--amber);
+}
+
+.poster-card .title {
+  padding-top: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.poster-card .year {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* Continue Watching */
+.section-heading {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0 0 1rem;
+}
+
+.continue-row {
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.continue-row .poster-card {
+  flex: 0 0 200px;
+}
+
+/* Detail views */
+.detail-wrap {
+  padding-top: 1.5rem;
+}
+
+.detail {
+  display: flex;
+  gap: 2rem;
+  max-width: 1100px;
+}
+
+.detail .poster {
+  /* Fixed height, width auto - lets the poster's real aspect ratio determine its width so the
+     full image always shows (no cropping via object-fit: cover, no stretching via a forced
+     aspect-ratio box), while keeping every detail page's poster the same height. */
+  height: 330px;
+  width: auto;
+  max-width: 100%;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--card-bg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.detail .info {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail h1 {
+  font-size: 2.2rem;
+  margin: 0 0 0.2rem;
+}
+
+.detail .subtitle {
+  color: var(--text-dim);
+  font-size: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.detail .meta {
+  color: var(--text-dim);
+  margin-bottom: 0.75rem;
+}
+
+.rating-badges {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.2rem;
+}
+
+.settings-view {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.settings-section {
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.settings-section h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.settings-section .hint {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-top: -0.5rem;
+}
+
+.settings-section label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.settings-section input[type='text'],
+.settings-section input[type='password'] {
+  display: block;
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.settings-section input[type='text']:focus,
+.settings-section input[type='password']:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+
+.pathmap-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.pairing-status {
+  margin-top: 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+}
+
+.pairing-status.paired {
+  color: #72d39b;
+}
+
+.pairing-status.error {
+  color: #ff6b6b;
+}
+
+.pathmap-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.pathmap-label {
+  color: var(--amber);
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-button-wide {
+  padding: 0.6rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button-wide:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.settings-save {
+  display: block;
+  margin: 0 auto;
+}
+
+.link-code {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-align: center;
+  color: var(--amber);
+}
+
+.link-status {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+.play-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.9rem 2rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 6px;
+  background: var(--amber);
+  color: #1a1200;
+  cursor: pointer;
+}
+
+.play-button:hover,
+.play-button:focus-visible {
+  background: var(--amber-hover);
+}
+
+.icon-button {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.icon-button.active {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #1a1200;
+}
+
+.overview {
+  line-height: 1.5;
+  max-width: 65ch;
+  color: var(--text);
+}
+
+.progress-line {
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  margin: 0.75rem 0 0;
+}
+
+.tech-specs {
+  margin-top: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.tech-specs .row {
+  display: flex;
+  gap: 1rem;
+  padding: 0.3rem 0;
+}
+
+.tech-specs .label {
+  width: 90px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* Cast & Crew */
+.cast-section {
+  margin-top: 2.5rem;
+  clear: both;
+}
+
+.cast-row {
+  display: flex;
+  gap: 2rem;
+  overflow-x: auto;
+  padding: 0.5rem 0 1rem;
+}
+
+.cast-member {
+  flex: 0 0 220px;
+  text-align: center;
+}
+
+.cast-member img,
+.cast-member .cast-photo-placeholder {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #303038;
+  margin-bottom: 0.5rem;
+}
+
+.cast-member .cast-photo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 2.2rem;
+  font-weight: 700;
+}
+
+.cast-member .name {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.cast-member .role {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* Seasons / episodes */
+.season-grid {
+  margin-bottom: 2.5rem;
+}
+
+.poster-card.active .poster-wrap {
+  outline: 3px solid var(--amber);
+  outline-offset: 3px;
+}
+
+.episode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
+.episode-card {
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.episode-card:hover,
+.episode-card:focus-visible {
+  transform: scale(1.03);
+}
+
+.episode-card .thumb-wrap {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.episode-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: var(--bg-elevated);
+}
+
+.episode-card .progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.episode-card .progress-fill {
+  height: 100%;
+  background: var(--amber);
+}
+
+.episode-card .watched-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(10, 10, 12, 0.75);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+}
+
+.episode-card .watched-badge.active {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #1a1200;
+}
+
+.episode-card .title {
+  padding-top: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.episode-card .subtitle-line {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.error {
+  color: #ff6b6b;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  left: calc(50% + 110px);
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  color: var(--text);
+  padding: 1rem 1.75rem;
+  border-radius: 999px;
+  font-size: 1.05rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transition: opacity 0.2s ease;
+  z-index: 30;
+}
+
+.toast.error {
+  background: #6a1f1f;
+}
+
+.toast.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Phone */
+@media (max-width: 700px) {
+  #nav {
+    position: static;
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    padding: 1rem;
+    gap: 1rem;
+    overflow-x: auto;
+  }
+  .nav-title {
+    display: none;
+  }
+  .nav-item {
+    border-left: none;
+    border-bottom: 3px solid transparent;
+  }
+  .nav-item:has(a.active) {
+    border-bottom-color: var(--amber);
+  }
+  #nav a {
+    padding: 0.5rem 0.5rem 0.5rem 0.9rem;
+    white-space: nowrap;
+  }
+  .nav-scan-button {
+    margin-right: 0.5rem;
+  }
+  #app {
+    margin-left: 0;
+    padding: 1rem 1rem 3rem;
+  }
+  .poster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 0.75rem;
+  }
+  .detail {
+    flex-direction: column;
+  }
+  .detail .poster {
+    height: 240px;
+    width: auto;
+  }
+  .detail h1 {
+    font-size: 1.5rem;
+  }
+  .episode-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.75rem;
+  }
+  .cast-member {
+    flex: 0 0 150px;
+  }
+  .cast-member img,
+  .cast-member .cast-photo-placeholder {
+    width: 130px;
+    height: 130px;
+  }
+  .toast {
+    left: 50%;
+  }
+}

@@ -1,0 +1,15 @@
+name: Media Launcher Beta
+version: "1.7.0"
+slug: media_launcher_beta
+description: BETA - prerelease Media Launcher builds for testing before promotion to stable
+arch:
+  - amd64
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8088
+panel_icon: mdi:movie-open-outline
+panel_title: Media Launcher Beta
+ports:
+  8088/tcp: 8089
