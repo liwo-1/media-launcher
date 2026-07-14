@@ -3,6 +3,10 @@
 Media Launcher has two deployable components and uses Plex only for metadata and watch state.
 MPC-HC reads the media file directly from its Windows-accessible UNC path.
 
+The default Home Assistant repository catalogue contains two independent app packages: `addon/`
+for stable and `addon-beta/` for a tested snapshot of the `beta` branch. They use different slugs,
+host ports, and persistent data, so installing beta never upgrades or overwrites stable.
+
 ```mermaid
 flowchart LR
     U[Phone / browser] -->|HTTP :8088| A[Home Assistant add-on]

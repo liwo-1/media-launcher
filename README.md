@@ -15,20 +15,27 @@ just using Plex's own.
 
 ## Release channels
 
-Home Assistant can track two branches from this repository as separate app sources:
+Add this repository once in Home Assistant:
 
-- **Stable:** `https://github.com/liwo-1/media-launcher`
-- **Beta:** `https://github.com/liwo-1/media-launcher#beta`
+`https://github.com/liwo-1/media-launcher`
 
-Add the wanted URL under Settings → Apps → App Store → Repositories. The beta channel contains
-prerelease changes for testing before they are promoted to `main`. If stable and beta are installed
-at the same time, assign different exposed host ports. The Windows player agent keeps one pairing,
-so switching channels also requires **Reset pairing** in its local Settings dialog.
+The App Store shows two independently installable cards from that one catalogue:
+
+- **Media Launcher** - stable releases, direct port `8088` by default.
+- **Media Launcher Beta** - prerelease builds, direct port `8089` by default.
+
+Each app has its own slug, configuration, and persistent data. They can be installed together, but
+the Windows player agent keeps one active add-on URL and pairing at a time. Use the matching beta
+agent release when testing beta features. Development continues on the `beta` Git branch; tested
+beta app snapshots are published to `addon-beta/` on `main` so Home Assistant can display both
+channels in the same catalogue.
 
 ## Two pieces
 
-- **`addon/`** - deployed as a Home Assistant local add-on. Talks to your existing Plex server's
-  API, serves the custom frontend, and resolves "Play" clicks to a Windows UNC path.
+- **`addon/`** - stable Home Assistant app package. Talks to your existing Plex server's API,
+  serves the custom frontend, and resolves "Play" clicks to a Windows UNC path.
+- **`addon-beta/`** - beta Home Assistant app snapshot with an independent slug, port, and data
+  directory. Its source is promoted from the `beta` branch without changing the stable package.
 - **`player-agent-app/`** - a single Windows executable that runs on the media PC. Displays the
   add-on's UI itself in a fullscreen kiosk window (via WebView2 - no separate browser process to
   launch), and runs a small local HTTP server that receives "Play" requests and spawns MPC-HC.
@@ -108,10 +115,10 @@ different, adjust the field list there.
 
 ### 3. media-launcher add-on (Home Assistant)
 
-1. Install: Settings → Add-ons → Add-on Store → ⋮ (top right) → Repositories → add
-   `https://github.com/liwo-1/media-launcher` → refresh → "Media Launcher" appears under the new
-   repository section → Install → Start. Check its log for `media-launcher listening on
-   0.0.0.0:8088`.
+1. Install: Settings → Apps → App Store → ⋮ (top right) → Repositories → add
+   `https://github.com/liwo-1/media-launcher` → refresh. Choose **Media Launcher** for stable or
+   **Media Launcher Beta** for prerelease testing, then Install and Start. The direct host ports
+   default to `8088` for stable and `8089` for beta; both containers listen on `8088` internally.
 2. Open its web UI (Ingress panel in the HA sidebar, or `http://<ha-host-ip>:8088` directly) - with
    nothing configured yet it lands straight on the **Settings** page. All configuration now lives
    there instead of the add-on's Configuration tab:
