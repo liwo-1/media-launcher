@@ -4,12 +4,11 @@ namespace MediaLauncherPlayerAgent;
 
 public static class MpcLauncher
 {
-    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".avi", ".m2ts", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv",
-    };
-
-    public static async Task PlayAsync(string filePath, string? mpcPathOverride, IReadOnlyCollection<string> allowedMediaRoots)
+    public static async Task<Process> PlayAsync(
+        string filePath,
+        string? mpcPathOverride,
+        IReadOnlyCollection<string> allowedMediaRoots,
+        bool fullscreen)
     {
         ValidateMediaPath(filePath, allowedMediaRoots);
         var mpcPath = MpcLocator.Find(mpcPathOverride);
@@ -32,63 +31,31 @@ public static class MpcLauncher
         // Get out of the way ourselves rather than relying on MPC-HC successfully stealing focus:
         // it's launched from a background HTTP request, not direct user input, and Windows'
         // foreground-lock routinely blocks exactly that from bringing a new window to the front.
-        MainForm.Instance?.MinimizeForPlayback();
-
         var startInfo = new ProcessStartInfo
         {
             FileName = mpcPath,
             UseShellExecute = false,
         };
         startInfo.ArgumentList.Add(filePath);
-        startInfo.ArgumentList.Add("/fullscreen");
+        if (fullscreen) startInfo.ArgumentList.Add("/fullscreen");
         startInfo.ArgumentList.Add("/play");
 
-        var mpcProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        mpcProcess.Exited += (_, _) => MainForm.Instance?.RestoreFromPlayback();
+        var mpcProcess = new Process { StartInfo = startInfo };
 
         try
         {
-            mpcProcess.Start();
-            Logger.Log($"MpcLauncher: started '{mpcPath}' \"{filePath}\" /fullscreen /play (pid {mpcProcess.Id})");
+            if (!mpcProcess.Start()) throw new InvalidOperationException("MPC-HC did not start.");
+            Logger.Log($"MpcLauncher: started '{mpcPath}' for '{filePath}' (pid {mpcProcess.Id})");
+            return mpcProcess;
         }
         catch (Exception ex)
         {
             Logger.Log($"MpcLauncher: Process.Start failed: {ex}");
-            MainForm.Instance?.RestoreFromPlayback();
+            mpcProcess.Dispose();
             throw new Exception($"Failed to launch MPC-HC: {ex.Message}", ex);
         }
     }
 
     public static void ValidateMediaPath(string filePath, IReadOnlyCollection<string> allowedMediaRoots)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-            throw new ArgumentException("Media path is required.");
-        if (Uri.TryCreate(filePath, UriKind.Absolute, out var uri) && !uri.IsUnc)
-            throw new ArgumentException("URL and local media paths are not allowed.");
-        if (!filePath.StartsWith(@"\\", StringComparison.Ordinal))
-            throw new ArgumentException("Only UNC media paths are allowed.");
-
-        var extension = Path.GetExtension(filePath);
-        if (!AllowedExtensions.Contains(extension))
-            throw new ArgumentException($"The media extension '{extension}' is not allowed.");
-
-        string normalizedPath;
-        try { normalizedPath = Path.GetFullPath(filePath).TrimEnd('\\'); }
-        catch (Exception ex) { throw new ArgumentException("Media path is invalid.", ex); }
-
-        var allowed = allowedMediaRoots.Any(root =>
-        {
-            if (string.IsNullOrWhiteSpace(root) || !root.StartsWith(@"\\", StringComparison.Ordinal)) return false;
-            string normalizedRoot;
-            try { normalizedRoot = Path.GetFullPath(root).TrimEnd('\\'); }
-            catch { return false; }
-            return normalizedPath.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase) ||
-                (normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase) &&
-                 normalizedPath.Length > normalizedRoot.Length &&
-                 normalizedPath[normalizedRoot.Length] == '\\');
-        });
-
-        if (!allowed)
-            throw new UnauthorizedAccessException("Media path is outside the configured allowed UNC roots.");
-    }
+        => MediaPathValidator.ValidateWindowsPath(filePath, allowedMediaRoots);
 }

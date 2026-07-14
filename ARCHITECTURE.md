@@ -1,54 +1,90 @@
 # Architecture
 
-Media Launcher has two deployable components and uses Plex only for metadata and watch state.
-MPC-HC reads the media file directly from its Windows-accessible UNC path.
-
-The default Home Assistant repository catalogue contains two independent app packages: `addon/`
-for stable and `addon-beta/` for a tested snapshot of the `beta` branch. They use different slugs,
-host ports, and persistent data, so installing beta never upgrades or overwrites stable.
+Media Launcher has a Home Assistant catalogue containing stable and beta apps plus independently
+installed playback agents. The stable app currently represents the proven Plex/MPC-HC baseline;
+the `1.8.0` beta introduces the multi-agent and multi-player foundation described here.
 
 ```mermaid
 flowchart LR
-    U[Phone / browser] -->|HTTP :8088| A[Home Assistant add-on]
-    W[WebView2 kiosk] -->|HTTP :8088| A
-    H[Home Assistant Ingress] --> A
-    A -->|Plex API + token| P[Plex Media Server]
-    G -->|Directed /register + installation ID| A
-    A -.->|Compatibility /pair fallback| G
-    A -->|Bearer-authenticated /play + /status| G[Windows player-agent :7777]
-    G -->|Process arguments| M[MPC-HC]
-    M -->|SMB / UNC file access| N[NAS]
-    G -->|localhost :13579| M
+    U[Phone / browser] --> A[Home Assistant app]
+    A --> P[Media provider: Plex]
+    A --> R[Private agent registry]
+    R --> W1[Windows agent: Living room]
+    R --> W2[Windows agent: Bedroom]
+    W1 --> M1[MPC-HC / VLC / PotPlayer / custom]
+    W2 --> M2[MPC-HC / VLC / PotPlayer / custom]
+    M1 --> N[NAS media paths]
+    M2 --> N
 ```
 
-## Home Assistant add-on
+## Home Assistant app
 
-The Node/Express process serves the static frontend and API from one port. `plex.js` is the Plex
-adapter, `pathmap.js` translates Plex paths into approved Windows paths, and
-`playback-monitor.js` owns the single active playback session. Persistent data lives in `/data` in
-Home Assistant and `addon/app/local-data` during local development.
+The Node/Express process serves the static frontend and API from one port. `plex.js` is currently
+the media-provider adapter. A selected Plex item is resolved to a server-side file path and then
+translated with the selected agent's path mappings.
 
-Settings and Plex linking require the optional admin PIN once configured. Normal library browsing,
-household controls, and component registration remain open by design. The Plex token and player
-secret are never returned to the browser.
+`agents.json` is a private registry containing agent URLs, one bearer secret per installation,
+platform information, cached player capabilities, per-device path mappings, and bounded revocation
+tombstones. Atomic writes keep a last-known-good backup. Browser-facing responses use deterministic
+opaque references and never expose installation IDs, URLs, or secrets.
 
-## Windows player-agent
+A playback target is the pair of an agent installation and one saved player profile. The frontend
+fetches target availability before playback, opens the target picker when requested, and posts only
+the opaque target ID. The backend resolves that ID and never falls back to a different room after
+an explicit selection fails.
 
-The .NET 8 WinForms application hosts both WebView2 and a small Kestrel server. The server validates
-the bearer secret and media path before `MpcLauncher` starts MPC-HC. MPC status is read only from
-MPC-HC's localhost Web Interface. Configuration and logs live under the current user's LocalAppData.
+Playback monitors are keyed by target. Each status poll resolves the current authenticated agent
+record again, so DHCP address refreshes do not strand an active monitor. Each monitor is bound to
+the launched media path, reports progress to the active provider, marks watched near the configured
+threshold, and keeps automatic next-episode playback on the same target. Launch-only players do not
+create a monitor.
 
-On first setup, the agent posts its protocol, listening port, and persistent random installation ID
-to `/api/player-agent/register` at the one add-on URL configured by the user. The add-on derives the
-agent host from the connection source, generates the shared key, and binds it to that installation.
-It accepts refresh/recovery from the same installation and rejects a different one. The original
-add-on-initiated `/pair` endpoint remains as a compatibility fallback.
+## Agent protocol
 
-## Playback sequence
+Protocol version 1 remains available for released stable apps and agents:
 
-1. The browser posts a Plex rating key to the add-on.
-2. The add-on obtains the media file from Plex metadata and applies a boundary-safe path mapping.
-3. The add-on sends the UNC path and bearer secret to the player.
-4. The player validates the secret, UNC root, and extension, then starts MPC-HC.
-5. One monitor session polls status, reports progress, marks watched near the threshold, and only
-   advances after a near-end transition to stopped.
+- `GET /health`
+- `POST /pair`
+- `POST /play`
+- `GET /status`
+
+New agents still register with `protocolVersion: 1` so old add-ons accept them, while advertising
+`supportedProtocolVersions`. A beta add-on can select protocol version 2, which adds authenticated
+capability discovery and session-aware playback:
+
+- `GET /v2/info`
+- `POST /v2/sessions`
+- `GET /v2/sessions/{sessionId}`
+
+String capability names allow players and future Linux agents to add features without changing the
+transport contract. Player IDs are stable only inside an agent; the add-on combines the agent and
+player identities into an opaque global target ID.
+
+The agent persists a separate enrollment credential before its first registration. The add-on
+adopts it for a new installation ID, making a lost first response idempotent; later registration
+refreshes must authenticate with the established secret. Registrations refresh periodically so a
+running agent can negotiate v2 after an add-on upgrade. Silent enrollment is rate-limited and
+capped, and removing an installation creates a tombstone until its local identity is reset.
+
+## Windows player agent
+
+The .NET 8 WinForms application hosts the kiosk WebView2 window and Kestrel server. It detects known
+players through registry entries, Windows App Paths, `PATH`, and standard installation locations.
+MPC-HC has a dedicated adapter and status reader. VLC and PotPlayer use safe built-in launch
+profiles in this beta.
+
+The session manager owns the launched process, enforces one active local session, stops the old
+process before replacement, and restores the kiosk only when the current owned process exits.
+
+Custom profiles are stored locally and contain an absolute executable, optional working directory,
+and one argument template per token. The agent expands `{media_path}`, `{title}`, and
+`{start_seconds}`, uses `ProcessStartInfo.ArgumentList`, and never invokes a shell. The media path is
+validated against locally configured UNC roots; titles and resume positions are untrusted metadata
+kept inside individual argument boundaries.
+
+## Future provider and Linux boundary
+
+Jellyfin belongs behind the same media-provider contract as Plex; it must not leak provider DTOs
+into playback targets or player adapters. Linux will be a separate host executable sharing the
+protocol and player contracts, with platform-specific path validation, discovery, desktop-session
+integration, and mpv/MPRIS adapters.

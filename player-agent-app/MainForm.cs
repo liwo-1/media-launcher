@@ -42,7 +42,7 @@ public class MainForm : Form
 
         var trayMenu = new ContextMenuStrip();
         trayMenu.Items.Add("Reload", null, async (_, _) => await ReloadFreshAsync());
-        trayMenu.Items.Add("Settings", null, (_, _) => OpenSettings());
+        trayMenu.Items.Add("Settings", null, async (_, _) => await OpenSettingsAsync());
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("Exit", null, (_, _) => { _trayIcon.Visible = false; Application.Exit(); });
         _trayIcon.ContextMenuStrip = trayMenu;
@@ -117,16 +117,40 @@ public class MainForm : Form
         Activate();
     }
 
-    private void OpenSettings()
+    private async Task OpenSettingsAsync()
     {
+        await PairingClient.StopAsync();
         using var form = new SettingsForm(_config);
-        if (form.ShowDialog() != DialogResult.OK) return;
+        if (form.ShowDialog() != DialogResult.OK)
+        {
+            PairingClient.Start(_config, _shutdownToken);
+            return;
+        }
 
         var portChanged = form.Config.Port != _config.Port;
-        form.Config.Save();
-        _config = form.Config;
-        PlayServer.UpdateConfig(_config);
-        PairingClient.Start(_config, _shutdownToken);
+        await PairingState.MutationLock.WaitAsync();
+        try
+        {
+            if (!form.PairingResetRequested)
+            {
+                // A compatibility /pair request may have completed while the dialog was open.
+                // Merge the latest protected identity instead of saving the dialog's stale copy.
+                form.Config.InstanceId = _config.InstanceId;
+                form.Config.SharedSecret = _config.SharedSecret;
+                form.Config.RegistrationSecret = _config.RegistrationSecret;
+            }
+            form.Config.Save();
+            _config = form.Config;
+            PlayServer.UpdateConfig(_config);
+        }
+        finally
+        {
+            PairingState.MutationLock.Release();
+        }
+        // The currently running Kestrel listener cannot change ports in place. Do not advertise
+        // the saved new port until restart, or Home Assistant would immediately route playback to
+        // a socket that is not listening yet.
+        if (!portChanged) PairingClient.Start(_config, _shutdownToken);
         if (_webView.CoreWebView2 != null)
         {
             _webView.Source = new Uri(_config.HomeAssistantUrl);

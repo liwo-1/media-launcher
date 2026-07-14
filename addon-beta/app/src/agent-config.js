@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { readSettings, writeSettings } = require('./settings-store');
+const { syncLegacyAgent } = require('./agent-store');
 
 const REQUEST_TIMEOUT_MS = 5000;
 
@@ -21,7 +22,10 @@ function getPlayerAgentHeaders(extra = {}) {
 
 function generatePlayerAgentSecret() {
   const playerAgentSecret = crypto.randomBytes(24).toString('hex');
-  writeSettings({ playerAgentSecret });
+  writeSettings({ playerAgentSecret, playerAgentPairingConfirmed: false });
+  // Persist a pending registry entry before the request. If the agent accepts the key but its
+  // response is lost, the same key and URL remain visible and retryable after a restart.
+  syncLegacyAgent();
   return playerAgentSecret;
 }
 
@@ -72,6 +76,8 @@ async function pairPlayerAgent() {
         headers: getPlayerAgentHeaders(),
       });
       if (statusResponse.status !== 401 && statusResponse.status !== 503) {
+        writeSettings({ playerAgentPairingConfirmed: true });
+        syncLegacyAgent();
         return { paired: true, state: 'paired', alreadyPaired: true };
       }
       if (healthState === true) {
@@ -104,9 +110,12 @@ async function pairPlayerAgent() {
 
   const body = await readResponseBody(response);
   if (response.ok) {
+    const settingsPatch = { playerAgentPairingConfirmed: true };
     if (typeof body.instanceId === 'string' && /^[a-f0-9]{32}$/i.test(body.instanceId)) {
-      writeSettings({ playerAgentInstanceId: body.instanceId.toLowerCase() });
+      settingsPatch.playerAgentInstanceId = body.instanceId.toLowerCase();
     }
+    writeSettings(settingsPatch);
+    syncLegacyAgent();
     return { paired: true, state: 'paired', alreadyPaired: false };
   }
   if (response.status === 409) {

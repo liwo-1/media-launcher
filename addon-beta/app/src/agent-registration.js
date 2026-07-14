@@ -1,8 +1,18 @@
 const crypto = require('crypto');
-const { readSettings, writeSettings } = require('./settings-store');
+const {
+  normalizePlayers,
+  readAgentStore,
+  writeAgentStore,
+} = require('./agent-store');
+const { writeSettings } = require('./settings-store');
 
 const PRODUCT = 'media-launcher-player-agent';
 const PROTOCOL_VERSION = 1;
+const CURRENT_PROTOCOL_VERSION = 2;
+const MAX_AGENTS = 16;
+const NEW_REGISTRATION_WINDOW_MS = 5 * 60 * 1000;
+const MAX_NEW_REGISTRATIONS_PER_ADDRESS = 10;
+const recentRegistrations = new Map();
 
 function generateSecret() {
   return crypto.randomBytes(24).toString('hex');
@@ -29,6 +39,30 @@ function agentUrl(address, port) {
   return `http://${host}:${port}`;
 }
 
+function cleanText(value, fallback, maxLength) {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, maxLength) : fallback;
+}
+
+function requestedProtocol(body) {
+  const supported = Array.isArray(body?.supportedProtocolVersions)
+    ? body.supportedProtocolVersions.filter(Number.isInteger)
+    : [PROTOCOL_VERSION];
+  return supported.includes(CURRENT_PROTOCOL_VERSION) ? CURRENT_PROTOCOL_VERSION : PROTOCOL_VERSION;
+}
+
+function allowNewRegistration(address) {
+  const now = Date.now();
+  const recent = (recentRegistrations.get(address) || [])
+    .filter((timestamp) => now - timestamp < NEW_REGISTRATION_WINDOW_MS);
+  if (recent.length >= MAX_NEW_REGISTRATIONS_PER_ADDRESS) {
+    recentRegistrations.set(address, recent);
+    return false;
+  }
+  recent.push(now);
+  recentRegistrations.set(address, recent);
+  return true;
+}
+
 function registerPlayerAgent({ body, remoteAddress, authorization = '' }) {
   const { product, protocolVersion, instanceId, port } = body || {};
   if (product !== PRODUCT || protocolVersion !== PROTOCOL_VERSION) {
@@ -45,33 +79,88 @@ function registerPlayerAgent({ body, remoteAddress, authorization = '' }) {
   if (!address) return { status: 400, body: { error: 'Could not determine the player agent address' } };
 
   const normalizedId = instanceId.toLowerCase();
-  const settings = readSettings();
-  if (settings.playerAgentInstanceId && settings.playerAgentInstanceId !== normalizedId) {
+  const suppliedSecret = bearerToken(authorization);
+  const store = readAgentStore();
+  if ((store.revokedInstanceIds || []).includes(normalizedId)) {
     return {
-      status: 409,
-      body: { error: 'This add-on is already paired with a different player agent' },
+      status: 403,
+      body: { error: 'This player-agent identity was removed. Reset pairing locally to enroll it again.' },
     };
   }
+  const originalStore = JSON.stringify(store);
+  let index = store.agents.findIndex((agent) => agent.instanceId === normalizedId);
+  let existing = index >= 0 ? store.agents[index] : null;
+  let claimedLegacy = false;
 
-  // Upgrades from the original add-on-initiated pairing have a secret but no instance ID.
-  // Requiring that existing secret prevents an unrelated LAN client from claiming the pairing.
-  if (!settings.playerAgentInstanceId && settings.playerAgentSecret) {
-    const suppliedSecret = bearerToken(authorization);
-    if (!secretsMatch(settings.playerAgentSecret, suppliedSecret)) {
-      return {
-        status: 409,
-        body: { error: 'The existing player agent pairing could not be verified' },
-      };
+  // A pre-registry installation may have a URL/key but no installation ID. The first new-style
+  // registration atomically claims that record only when it proves possession of the old key.
+  if (!existing && suppliedSecret) {
+    const legacyIndex = store.agents.findIndex(
+      (agent) => agent.legacy && secretsMatch(agent.secret, suppliedSecret)
+    );
+    if (legacyIndex >= 0) {
+      index = legacyIndex;
+      existing = store.agents[legacyIndex];
+      claimedLegacy = true;
     }
   }
 
-  const secret = settings.playerAgentSecret || generateSecret();
+  if (!existing && store.agents.length >= MAX_AGENTS) {
+    return {
+      status: 429,
+      body: { error: `The player-agent limit (${MAX_AGENTS}) has been reached. Remove an old device first.` },
+    };
+  }
+  if (!existing && !allowNewRegistration(address)) {
+    return { status: 429, body: { error: 'Too many new player agents registered from this address.' } };
+  }
+
   const url = agentUrl(address, port);
-  writeSettings({
-    playerAgentUrl: url,
-    playerAgentSecret: secret,
-    playerAgentInstanceId: normalizedId,
-  });
+  if (existing?.secret && !secretsMatch(existing.secret, suppliedSecret)) {
+    return { status: 409, body: { error: 'The existing player agent pairing could not be verified' } };
+  }
+
+  const negotiatedProtocolVersion = requestedProtocol(body);
+  const secret = existing?.secret || suppliedSecret || generateSecret();
+  let players;
+  if (negotiatedProtocolVersion === PROTOCOL_VERSION) {
+    // v1 has no player selection. Never retain stale v2 targets after an agent downgrade.
+    players = normalizePlayers(undefined, true);
+  } else {
+    const advertisedPlayers = body.players === undefined
+      ? existing?.players
+      : normalizePlayers(body.players);
+    players = advertisedPlayers || [];
+  }
+  const advertisedName = cleanText(body.displayName || body.name, existing?.advertisedName || 'Media PC', 80);
+  const agent = {
+    ...(existing || {}),
+    instanceId: normalizedId,
+    legacy: false,
+    paired: true,
+    name: existing?.nameCustomized ? existing.name : advertisedName,
+    advertisedName,
+    nameCustomized: Boolean(existing?.nameCustomized),
+    url,
+    secret,
+    platform: cleanText(body.platform, existing?.platform || 'windows', 32).toLowerCase(),
+    architecture: cleanText(body.architecture, existing?.architecture || '', 32).toLowerCase(),
+    version: cleanText(body.agentVersion, existing?.version || '', 40),
+    negotiatedProtocolVersion,
+    players,
+    pathMap: existing?.pathMap || [],
+  };
+
+  if (index >= 0) store.agents[index] = agent;
+  else store.agents.push(agent);
+  if (JSON.stringify(store) !== originalStore) writeAgentStore(store);
+  if (claimedLegacy && !process.env.PLAYER_AGENT_URL && !process.env.PLAYER_AGENT_SECRET) {
+    writeSettings({
+      playerAgentUrl: url,
+      playerAgentInstanceId: normalizedId,
+      playerAgentPairingConfirmed: true,
+    });
+  }
 
   return {
     status: 200,
@@ -80,8 +169,15 @@ function registerPlayerAgent({ body, remoteAddress, authorization = '' }) {
       secret,
       playerAgentUrl: url,
       protocolVersion: PROTOCOL_VERSION,
+      selectedProtocolVersion: negotiatedProtocolVersion,
+      registrationRefreshSeconds: 300,
     },
   };
 }
 
-module.exports = { PRODUCT, PROTOCOL_VERSION, registerPlayerAgent };
+module.exports = {
+  PRODUCT,
+  PROTOCOL_VERSION,
+  CURRENT_PROTOCOL_VERSION,
+  registerPlayerAgent,
+};

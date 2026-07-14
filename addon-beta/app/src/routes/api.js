@@ -2,8 +2,17 @@ const express = require('express');
 const { Readable } = require('stream');
 const plex = require('../plex');
 const { playItem, PlayError } = require('../play');
+const { getPlaybackTargets } = require('../playback-targets');
 
 const router = express.Router();
+
+router.get('/playback-targets', async (_req, res) => {
+  try {
+    res.json(await getPlaybackTargets());
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
 
 router.get('/libraries', async (_req, res) => {
   try {
@@ -130,7 +139,11 @@ router.get('/image', async (req, res) => {
 
 router.post('/play/:id', async (req, res) => {
   try {
-    const result = await playItem(req.params.id);
+    const targetId = req.body?.targetId;
+    if (targetId !== undefined && typeof targetId !== 'string') {
+      return res.status(400).json({ error: 'targetId must be a string' });
+    }
+    const result = await playItem(req.params.id, targetId || '');
     res.json({ ok: true, ...result });
   } catch (err) {
     const status = err instanceof PlayError ? err.status : 502;

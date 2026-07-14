@@ -1,9 +1,10 @@
 # Media Launcher
 
 A Plex-like poster-grid browser for movies and TV, backed by your existing Plex server for
-metadata only. Clicking Play launches MPC-HC fullscreen on the media PC, reading the file directly
-off the NAS - Plex is never involved in actual playback, and nothing about your existing Plex setup
-is modified.
+metadata and watched state. Clicking Play sends the file directly to a paired playback device;
+MPC-HC, VLC, PotPlayer, and safe custom Windows launch profiles are available in the current beta.
+The player reads from the NAS, Plex is never involved in actual playback, and nothing about the
+existing Plex library is modified.
 
 Visually styled after Plex's own web client (dark theme, amber accent, ambient background color
 wash generated from each item's actual Plex-computed `UltraBlurColors`, poster season-count badges,
@@ -37,21 +38,25 @@ tested baseline; the beta card diverges again when the next prerelease begins.
   serves the custom frontend, and resolves "Play" clicks to a Windows UNC path.
 - **`addon-beta/`** - beta Home Assistant app snapshot with an independent slug, port, and data
   directory. Its source is promoted from the `beta` branch without changing the stable package.
-- **`player-agent-app/`** - a single Windows executable that runs on the media PC. Displays the
+- **`player-agent-app/`** - a Windows executable installed on each playback PC. Displays the
   add-on's UI itself in a fullscreen kiosk window (via WebView2 - no separate browser process to
-  launch), and runs a small local HTTP server that receives "Play" requests and spawns MPC-HC.
+  launch), and runs a small local HTTP server that receives authenticated, target-specific playback
+  sessions and starts the selected local media player.
   Superseded the original `player-agent/` Node.js version + PowerShell scheduled-task scripts,
   which no longer need installing.
 
 ### player-agent-app features
 
 - **First-run Settings dialog** - Home Assistant add-on URL, player agent port, automatic pairing
-  status, allowed UNC media roots, optional MPC-HC path override, and "Start with Windows" checkbox.
+  status, allowed UNC media roots, player discovery/custom profiles, and "Start with Windows".
   Reopen any time from the tray icon.
-- **MPC-HC auto-detection** - checks the Windows registry and default install paths live as you
-  open Settings; shows a **Browse...** button and a download link if it can't find MPC-HC.
-- **Log tab** inside Settings - shows `player-agent.log` (next to the exe) without needing to dig
-  through the file system. Every `/play`/`/status` request and its outcome is logged there.
+- **Player auto-detection** - checks registry entries, Windows App Paths, `PATH`, and normal install
+  locations for MPC-HC, VLC, and PotPlayer. Portable installs can use path overrides.
+- **Safe custom players** - configure an executable, optional working directory, and one argument
+  template per token. Placeholders are expanded without invoking a shell.
+- **Log tab** inside Settings - shows the log from
+  `%LocalAppData%\MediaLauncherPlayerAgent\` without needing to dig through the file system. Every
+  playback/status request and its outcome is logged there.
 - **Tray icon** (Reload / Settings / Exit) - closing the window (Alt+F4, taskbar X) minimizes to
   tray instead of quitting, since this same process also hosts the `/play` HTTP server the add-on
   depends on. Reload force-clears WebView2's cache first, so it always picks up the add-on's latest
@@ -66,8 +71,8 @@ tested baseline; the beta card diverges again when the next prerelease begins.
 
 - An existing Plex Media Server (NAS or separate box), already running and with its libraries
   scanned/matched. Just need a token and its reachable address.
-- MPC-HC installed on the media PC ([clsid2's actively-maintained fork](https://github.com/clsid2/mpc-hc/releases/latest) -
-  the original sourceforge/codeplex project is dead).
+- At least one supported media player on each playback PC. MPC-HC provides full progress and
+  auto-next support; VLC, PotPlayer, and custom profiles are launch-only in `1.8.0-beta.1`.
 - SMB access from the media PC to the NAS export, with saved credentials so opening a UNC path never
   prompts for auth.
 - .NET 8 SDK on whichever machine builds `player-agent-app` (not needed on the media PC itself -
@@ -95,9 +100,14 @@ Copy just that one file to the media PC and run it. First launch shows the Setti
 
 The player starts unpaired and rejects playback until registration succeeds. It contacts only the
 Home Assistant add-on URL entered above (no LAN scan or multicast discovery), and retries until the
-add-on is available. The add-on learns the player's source address, exchanges a random key, and
-remembers the player's persistent installation ID. A different installation cannot silently
-replace it. **Reset pairing** is normally only needed while troubleshooting.
+add-on is available. Before first contact it persists a random enrollment key, making registration
+safe to retry even if the first response is lost. The add-on learns the player's source address and
+remembers its persistent installation ID. Each installation receives its own record and secret and
+cannot replace another device.
+
+Use **Remove device** in the add-on Settings to revoke a retired installation. That identity cannot
+silently return; choose **Reset pairing** locally to rotate its identity before enrolling it again.
+Resetting locally first is also safe, but the old offline card remains until removed in the add-on.
 
 The player rejects URLs, local paths, paths outside these roots, and unsupported media extensions.
 
@@ -107,7 +117,7 @@ configuration in `%LocalAppData%\MediaLauncherPlayerAgent\` and the "Start with 
 entry both keep working untouched. Existing `config.json` and logs beside an older executable are
 migrated automatically on first launch.
 
-**Also enable MPC-HC's Web Interface** (View → Options → Player → Web Interface → check "Listen on
+When using MPC-HC, **also enable its Web Interface** (View → Options → Player → Web Interface → check "Listen on
 port", default 13579) - needed for playback monitoring (progress reporting back to Plex + auto-play
 next episode, see below). Confirm it's working by opening
 `http://localhost:13579/variables.html` directly in a browser while something's playing - it should
@@ -127,15 +137,14 @@ different, adjust the field list there.
    - **Plex Account** - click "Link with Plex", then enter the 4-character code shown at
      [plex.tv/link](https://plex.tv/link) on any device. The add-on polls and stores the token
      itself (in its persistent `/data` storage) - no token to copy-paste.
-   - **Library path mapping** - one row per library folder. Click **Discover from Plex** to
+   - **Library path mapping** - one set per paired device. Click **Discover from Plex** to
      auto-fill the *from* side straight from Plex's own API (one row per physical folder, labeled
      with the library name - handles libraries backed by more than one folder too); only the *to*
-     side (the Windows UNC path reachable from the media PC) needs typing by hand. See the comment
+     side (the path reachable from that playback PC) needs typing by hand. See the comment
      in `addon/app/src/pathmap.js` for the forward-slash convention, though the Settings form
      itself tolerates either slash direction on the *to* side.
-   - **Connections** - set Plex's reachable address from the HA host (usually port 32400). The
-     player agent URL is filled automatically when the Windows agent registers; it remains editable
-     as a compatibility and network-troubleshooting fallback.
+   - **Connections** - set Plex's reachable address, rename paired devices, inspect their detected
+     players, select a default playback target, and choose whether playback should always ask.
    - **Security** - the 4-to-12-digit admin PIN is optional. When enabled it protects Settings and
      Plex account linking while normal household browsing and playback remain login-free. It can
      be disabled later, and player pairing never depends on it.
@@ -173,7 +182,9 @@ cd player-agent-app && dotnet run
 The addon backend has no options file to create - open `http://localhost:8088` and use the
 Settings page, exactly like the real add-on (settings persist to `addon/app/local-data/`, gitignored).
 For quick one-off overrides you can also set `PLEX_URL` / `PLEX_TOKEN` / `PLAYER_AGENT_URL` /
-`PATH_MAP` / `PORT` as env vars before `npm start` - they take priority over whatever's saved.
+`PLAYER_AGENT_SECRET` / `PATH_MAP` / `PORT` before `npm start`. Player-agent and path-map variables
+are the legacy singleton compatibility path; registered protocol-v2 agents use their authenticated
+source address and per-device mappings instead.
 
 Note: `PATH_MAP` (whether saved via the Settings page or set as an env var) is a JSON array - keep
 both `from` and `to` as forward-slash paths (e.g. `"to": "//nas/Movies"`), never literal
@@ -188,9 +199,9 @@ LAN threat model, and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common setup 
 player-agent-app over the LAN, and launches MPC-HC fullscreen with the right file - for both
 movies and TV episodes.
 
-After a successful Play, `src/playback-monitor.js` maintains one cancellable playback session and
-polls player-agent-app's `/status` every 10s (which itself reads MPC-HC's Web Interface via
-`MpcStatus.cs`). It:
+After a successful Play, `src/playback-monitor.js` maintains a cancellable session per target and
+polls the authenticated session status every 10s (MPC-HC status is read through its local Web
+Interface by `MpcStatus.cs`). It:
 
 - Reports position/state back to Plex (`/:/timeline`) - makes progress from playback through this
   launcher show up in Plex's own "Continue Watching"/on-deck data, not just plays through Plex's
@@ -198,7 +209,9 @@ polls player-agent-app's `/status` every 10s (which itself reads MPC-HC's Web In
 - Marks the item watched (`/:/scrobble`) once past 90% - the same threshold Plex/most clients use.
 - If it was a TV episode, automatically starts the next episode only after playback transitions to
   stopped near the end; reaching 90% while still playing no longer cuts off the final 10%.
-- Cancels the previous monitor when a new item starts and tolerates two transient status failures.
+- Replaces only the previous monitor on the same target and tolerates two transient status failures.
+- Stops a monitor if the player reports a different file, preventing progress or watched state from
+  being attributed to the wrong Plex item after manual player changes.
 - If MPC-HC is closed early, stops polling without auto-advance.
 
 The state machine and path-boundary behavior have automated tests. End-to-end status parsing and
@@ -206,7 +219,12 @@ auto-advance still require confirmation against a real MPC-HC playback session b
 Interface output varies by MPC-HC version. Follow the verification steps in
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md#playback-monitoring-verification).
 
-## Future enhancements (Plex Pass)
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for Jellyfin, richer VLC/PotPlayer control, the Linux agent, and release
+automation milestones.
+
+### Future enhancement (Plex Pass)
 
 Not built yet:
 

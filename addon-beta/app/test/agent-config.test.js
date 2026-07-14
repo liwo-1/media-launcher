@@ -10,6 +10,7 @@ delete process.env.PLAYER_AGENT_URL;
 delete process.env.PLAYER_AGENT_SECRET;
 
 const { readSettings, writeSettings } = require('../src/settings-store');
+const { readAgentStore } = require('../src/agent-store');
 const { pairPlayerAgent } = require('../src/agent-config');
 
 const originalFetch = global.fetch;
@@ -61,6 +62,26 @@ test('generates, persists, and sends one key for first-time pairing', async () =
   assert.equal(result.alreadyPaired, false);
   assert.match(sentSecret, /^[a-f0-9]{48}$/);
   assert.equal(readSettings().playerAgentSecret, sentSecret);
+  assert.equal(readSettings().playerAgentPairingConfirmed, true);
+  assert.equal(readAgentStore().agents[0].paired, true);
+});
+
+test('a lost first-pair response leaves a retryable pending agent and key', async () => {
+  writeSettings({ playerAgentUrl: 'http://player.test:7777' });
+  global.fetch = async (url) => {
+    if (url.endsWith('/health')) return response(200, { ok: true, paired: false });
+    const error = new Error('connection closed');
+    error.name = 'TypeError';
+    throw error;
+  };
+
+  await assert.rejects(pairPlayerAgent(), /Could not reach the player agent/);
+  const settings = readSettings();
+  const pending = readAgentStore().agents[0];
+  assert.match(settings.playerAgentSecret, /^[a-f0-9]{48}$/);
+  assert.equal(settings.playerAgentPairingConfirmed, false);
+  assert.equal(pending.secret, settings.playerAgentSecret);
+  assert.equal(pending.paired, false);
 });
 
 test('keeps an existing working key without calling the pairing endpoint', async () => {
