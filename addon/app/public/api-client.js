@@ -111,7 +111,7 @@ const api = {
   },
 
   async pairPlayerAgent() {
-    return api._postAdmin('api/settings/player-agent/pair');
+    return api._post('api/player-agent/pair');
   },
 
   async saveSettings(settings) {
@@ -125,6 +125,12 @@ const api = {
       throw new Error(body.error || `Request failed (${response.status})`);
     }
     if (settings.newAdminPin) api._storeAdminPin(settings.newAdminPin);
+    return body;
+  },
+
+  async disableAdminPin() {
+    const body = await api._postAdmin('api/settings/admin-pin/disable');
+    api._storeAdminPin('');
     return body;
   },
 

@@ -30,12 +30,14 @@ const beta = loadApp('addon-beta');
 assert.equal(stable.name, 'Media Launcher');
 assert.equal(stable.slug, 'media_launcher');
 assert.equal(stable.hostPort, 8088);
-assert.doesNotMatch(stable.version, /beta/i);
 
 assert.equal(beta.name, 'Media Launcher Beta');
 assert.equal(beta.slug, 'media_launcher_beta');
 assert.equal(beta.hostPort, 8089);
-assert.match(beta.version, /beta/i);
+
+const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+assert.match(stable.version, versionPattern);
+assert.match(beta.version, versionPattern);
 
 assert.notEqual(stable.slug, beta.slug);
 assert.notEqual(stable.hostPort, beta.hostPort);
