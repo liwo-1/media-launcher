@@ -8,21 +8,37 @@ permissions:
   contents: read
 
 jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/check-catalog.js
+
   addon:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: addon/app
+    strategy:
+      matrix:
+        app:
+          - addon
+          - addon-beta
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: addon/app/package-lock.json
+          cache-dependency-path: ${{ matrix.app }}/app/package-lock.json
       - run: npm ci
+        working-directory: ${{ matrix.app }}/app
       - run: npm run lint
+        working-directory: ${{ matrix.app }}/app
       - run: npm test
+        working-directory: ${{ matrix.app }}/app
+      - run: docker build --tag media-launcher-ci:${{ matrix.app }} .
+        working-directory: ${{ matrix.app }}
 
   player-agent:
     runs-on: windows-latest
