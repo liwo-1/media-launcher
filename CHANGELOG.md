@@ -1,5 +1,12 @@
 # Changelog
 
+## Catalogue update — 2026-07-14
+
+- Added stable and beta as two separately installable Home Assistant apps in the default
+  repository catalogue.
+- Assigned the beta app its own slug, persistent data, panel title, and default host port `8089`.
+- Kept the stable app on `1.6.0` while publishing the tested beta snapshot as `1.7.0-beta.1`.
+
 ## 1.6.0 — 2026-07-14
 
 - Added silent, one-time pairing between the Home Assistant add-on and Windows player agent.

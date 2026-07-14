@@ -1,0 +1,8 @@
+app/.env
+app/local-data
+app/node_modules
+app/npm-debug.log
+app/scripts
+app/test
+**/*.log
+.git
