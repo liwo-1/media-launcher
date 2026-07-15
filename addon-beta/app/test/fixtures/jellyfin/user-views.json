@@ -1,0 +1,19 @@
+{
+  "Items": [
+    {
+      "Id": "lib_movies",
+      "Name": "Movies",
+      "CollectionType": "movies"
+    },
+    {
+      "Id": "lib_tv",
+      "Name": "Television",
+      "CollectionType": "tvshows"
+    },
+    {
+      "Id": "lib_music",
+      "Name": "Music",
+      "CollectionType": "music"
+    }
+  ]
+}

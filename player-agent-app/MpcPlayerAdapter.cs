@@ -10,7 +10,14 @@ public sealed class MpcPlayerAdapter(string? executableOverride) : IPlayerAdapte
         "MPC-HC",
         "detected",
         true,
-        ["play.file", "fullscreen", "status.state", "status.position", "status.duration"]);
+        [
+            PlayerCapabilities.PlayFile,
+            PlayerCapabilities.Fullscreen,
+            PlayerCapabilities.StatusState,
+            PlayerCapabilities.StatusPosition,
+            PlayerCapabilities.StatusDuration,
+            PlayerCapabilities.ControlStop,
+        ]);
 
     public event EventHandler? PlaybackExited;
     private readonly object _processLock = new();
@@ -22,6 +29,7 @@ public sealed class MpcPlayerAdapter(string? executableOverride) : IPlayerAdapte
             request.MediaPath,
             executableOverride,
             allowedMediaRoots,
+            request.StartPositionMs,
             request.Fullscreen);
         lock (_processLock) _process = process;
         process.Exited += HandleProcessExited;

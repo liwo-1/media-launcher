@@ -16,6 +16,7 @@ jobs:
         with:
           node-version: 20
       - run: node scripts/check-catalog.js
+      - run: node --test scripts/*.test.js
 
   addon:
     runs-on: ubuntu-latest
@@ -52,3 +53,108 @@ jobs:
           dotnet-version: 8.0.x
       - run: dotnet restore
       - run: dotnet build --configuration Release --no-restore
+      - run: dotnet restore tests/PlayerAgent.Tests.csproj
+      - run: >-
+          dotnet run
+          --project tests/PlayerAgent.Tests.csproj
+          --configuration Release
+          --no-restore
+      - run: dotnet restore ../release-tests/windows-agent-contract-tests/WindowsAgentContractTests.csproj
+      - run: >-
+          dotnet run
+          --project ../release-tests/windows-agent-contract-tests/WindowsAgentContractTests.csproj
+          --configuration Release
+          --no-restore
+      - name: Publish self-contained single-file artifact
+        shell: pwsh
+        run: |
+          $publish = Join-Path $env:RUNNER_TEMP 'player-agent-publish'
+          $artifact = Join-Path $env:RUNNER_TEMP 'player-agent-artifact'
+          dotnet publish PlayerAgent.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugSymbols=false `
+            -p:DebugType=None `
+            --output $publish
+          New-Item -ItemType Directory -Path $artifact -ErrorAction Stop | Out-Null
+          Copy-Item `
+            -LiteralPath (Join-Path $publish 'MediaLauncherPlayerAgent.exe') `
+            -Destination $artifact
+      - name: Validate self-contained artifact
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -LiteralPath PlayerAgent.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          & ../scripts/Test-PlayerAgentArtifact.ps1 `
+            -PublishDirectory "${{ runner.temp }}\player-agent-artifact" `
+            -ExpectedVersion $version
+
+  linux-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet restore agent-core-tests/MediaLauncher.Agent.Core.Tests.csproj
+      - run: >-
+          dotnet run
+          --project agent-core-tests/MediaLauncher.Agent.Core.Tests.csproj
+          --configuration Release
+          --no-restore
+      - run: dotnet restore linux-agent-tests/MediaLauncher.LinuxAgent.Tests.csproj
+      - run: >-
+          dotnet run
+          --project linux-agent-tests/MediaLauncher.LinuxAgent.Tests.csproj
+          --configuration Release
+          --no-restore
+
+  linux-agent-artifact:
+    needs: linux-agent
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [linux-x64, linux-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: >-
+          dotnet restore linux-agent/MediaLauncher.LinuxAgent.csproj
+          --runtime ${{ matrix.rid }}
+      - name: Publish self-contained single-file artifact
+        shell: pwsh
+        run: |
+          $publish = Join-Path $env:RUNNER_TEMP 'linux-agent-publish-${{ matrix.rid }}'
+          $artifact = Join-Path $env:RUNNER_TEMP 'linux-agent-artifact-${{ matrix.rid }}'
+          dotnet publish linux-agent/MediaLauncher.LinuxAgent.csproj `
+            --configuration Release `
+            --runtime '${{ matrix.rid }}' `
+            --self-contained true `
+            --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugSymbols=false `
+            -p:DebugType=None `
+            --output $publish
+          New-Item -ItemType Directory -Path $artifact -ErrorAction Stop | Out-Null
+          Copy-Item `
+            -LiteralPath (Join-Path $publish 'media-launcher-linux-agent') `
+            -Destination $artifact
+          [xml]$project = Get-Content -LiteralPath linux-agent/MediaLauncher.LinuxAgent.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          $validation = @{
+            PublishDirectory = $artifact
+            ExpectedRuntimeIdentifier = '${{ matrix.rid }}'
+            ExpectedVersion = $version
+          }
+          if ('${{ matrix.rid }}' -eq 'linux-x64') {
+            $validation.ExecuteVersionCheck = $true
+          }
+          & ./scripts/Test-LinuxAgentArtifact.ps1 @validation

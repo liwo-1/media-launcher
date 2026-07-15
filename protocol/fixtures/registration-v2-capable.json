@@ -1,0 +1,27 @@
+{
+  "product": "media-launcher-player-agent",
+  "protocolVersion": 1,
+  "supportedProtocolVersions": [1, 2],
+  "instanceId": "22222222222222222222222222222222",
+  "port": 7777,
+  "agentVersion": "1.5.0-beta.1",
+  "displayName": "Fixture Player",
+  "platform": "windows",
+  "architecture": "x64",
+  "players": [
+    {
+      "id": "mpc-hc",
+      "kind": "mpc-hc",
+      "name": "MPC-HC",
+      "available": true,
+      "capabilities": [
+        "play.file",
+        "fullscreen",
+        "status.state",
+        "status.position",
+        "status.duration",
+        "control.stop"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "MediaContainer": {
+    "Hub": [
+      {
+        "type": "movie",
+        "Metadata": [
+          {
+            "ratingKey": "100",
+            "type": "movie",
+            "title": "Example Film",
+            "thumb": "/library/metadata/100/thumb/1700000000"
+          }
+        ]
+      },
+      {
+        "type": "show",
+        "Metadata": [
+          {
+            "ratingKey": "200",
+            "type": "show",
+            "title": "Example Series",
+            "thumb": "/library/metadata/200/thumb/1700000000"
+          }
+        ]
+      },
+      {
+        "type": "artist",
+        "Metadata": [
+          {
+            "ratingKey": "300",
+            "type": "artist",
+            "title": "Unsupported Artist"
+          }
+        ]
+      }
+    ]
+  }
+}

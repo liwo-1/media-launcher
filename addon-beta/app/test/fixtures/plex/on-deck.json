@@ -1,0 +1,20 @@
+{
+  "MediaContainer": {
+    "Metadata": [
+      {
+        "ratingKey": "212",
+        "type": "episode",
+        "title": "Second",
+        "grandparentRatingKey": "200",
+        "parentRatingKey": "210",
+        "grandparentTitle": "Example Series",
+        "parentTitle": "Season 1",
+        "parentIndex": 1,
+        "index": 2,
+        "duration": 2700000,
+        "viewOffset": 900000,
+        "thumb": "/library/metadata/212/thumb/1700000000"
+      }
+    ]
+  }
+}

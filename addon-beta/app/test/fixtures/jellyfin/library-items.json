@@ -1,0 +1,98 @@
+{
+  "Items": [
+    {
+      "Id": "movie_1",
+      "Type": "Movie",
+      "Name": "Example Film",
+      "ProductionYear": 2024,
+      "Overview": "A fixture film.",
+      "OfficialRating": "PG-13",
+      "RunTimeTicks": 72000000000,
+      "DateCreated": "2023-11-14T22:13:20Z",
+      "CriticRating": 74,
+      "CommunityRating": 8.2,
+      "Genres": ["Drama", "Adventure"],
+      "ImageTags": {
+        "Primary": "poster_tag",
+        "Thumb": "thumb_tag"
+      },
+      "BackdropImageTags": ["backdrop_tag"],
+      "UserData": {
+        "Played": true,
+        "PlaybackPositionTicks": 1200000000
+      },
+      "People": [
+        {
+          "Id": "person_director",
+          "Name": "Alex Example",
+          "Type": "Director"
+        },
+        {
+          "Id": "person_actor",
+          "Name": "Casey Fixture",
+          "Type": "Actor",
+          "Role": "Morgan",
+          "PrimaryImageTag": "person_tag"
+        },
+        {
+          "Id": "person_actor_no_image",
+          "Name": "No Image",
+          "Type": "Actor",
+          "Role": "Taylor"
+        }
+      ],
+      "MediaSources": [
+        {
+          "Id": "source_movie",
+          "Protocol": "File",
+          "Path": "/srv/media/Movies/Example Film (2024)/Example Film.mkv",
+          "MediaStreams": [
+            {
+              "Type": "Video",
+              "Height": 1080,
+              "Codec": "h264"
+            },
+            {
+              "Type": "Audio",
+              "Language": "eng",
+              "Codec": "aac",
+              "Channels": 6
+            },
+            {
+              "Type": "Subtitle",
+              "Language": "dan",
+              "Codec": "srt",
+              "IsForced": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Id": "series_1",
+      "Type": "Series",
+      "Name": "Example Series",
+      "ProductionYear": 2023,
+      "ChildCount": 2,
+      "RecursiveItemCount": 10,
+      "UserData": {
+        "UnplayedItemCount": 3
+      },
+      "ImageTags": {
+        "Primary": "series_tag"
+      }
+    },
+    {
+      "Id": "audio_1",
+      "Type": "Audio",
+      "Name": "Unsupported Song",
+      "MediaSources": [
+        {
+          "Id": "source_audio",
+          "Protocol": "File",
+          "Path": "/srv/media/Music/song.flac"
+        }
+      ]
+    }
+  ]
+}

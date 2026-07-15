@@ -1,0 +1,58 @@
+{
+  "Items": [
+    {
+      "Id": "episode_2",
+      "Type": "Episode",
+      "Name": "Second",
+      "SeriesId": "series_1",
+      "SeasonId": "season_1",
+      "SeriesName": "Example Series",
+      "SeasonName": "Season 1",
+      "ParentIndexNumber": 1,
+      "IndexNumber": 2,
+      "MediaSources": [
+        {
+          "Id": "source_episode_2",
+          "Protocol": "File",
+          "Path": "/srv/media/Television/Example Series/Season 01/Episode 02.mkv"
+        }
+      ]
+    },
+    {
+      "Id": "episode_1",
+      "Type": "Episode",
+      "Name": "First",
+      "SeriesId": "series_1",
+      "SeasonId": "season_1",
+      "SeriesName": "Example Series",
+      "SeasonName": "Season 1",
+      "ParentIndexNumber": 1,
+      "IndexNumber": 1,
+      "MediaSources": [
+        {
+          "Id": "source_episode_1",
+          "Protocol": "File",
+          "Path": "/srv/media/Television/Example Series/Season 01/Episode 01.mkv"
+        }
+      ]
+    },
+    {
+      "Id": "episode_3",
+      "Type": "Episode",
+      "Name": "Third",
+      "SeriesId": "series_1",
+      "SeasonId": "season_1",
+      "SeriesName": "Example Series",
+      "SeasonName": "Season 1",
+      "ParentIndexNumber": 1,
+      "IndexNumber": 3,
+      "MediaSources": [
+        {
+          "Id": "source_episode_3",
+          "Protocol": "File",
+          "Path": "/srv/media/Television/Example Series/Season 01/Episode 03.mkv"
+        }
+      ]
+    }
+  ]
+}

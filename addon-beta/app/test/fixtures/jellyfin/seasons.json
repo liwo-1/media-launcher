@@ -1,0 +1,14 @@
+{
+  "Items": [
+    {
+      "Id": "season_1",
+      "Type": "Season",
+      "Name": "Season 1",
+      "SeriesId": "series_1",
+      "SeriesName": "Example Series",
+      "IndexNumber": 1,
+      "ChildCount": 3,
+      "SeriesPrimaryImageTag": "series_tag"
+    }
+  ]
+}

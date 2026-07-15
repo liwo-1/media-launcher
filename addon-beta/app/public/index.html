@@ -7,11 +7,22 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div id="ambient-bg"></div>
+  <img id="ambient-bg" alt="" />
   <div id="ambient-grain"></div>
 
-  <nav id="nav">
+  <nav id="nav" aria-label="Media libraries">
     <div class="nav-title">Media Launcher</div>
+    <form id="media-search-form" class="media-search" role="search">
+      <label class="visually-hidden" for="media-search-input">Search movies and series</label>
+      <input
+        id="media-search-input"
+        type="search"
+        name="q"
+        placeholder="Search media"
+        autocomplete="off"
+      />
+      <button type="submit" aria-label="Search">⌕</button>
+    </form>
     <div id="nav-libraries"></div>
     <div class="nav-item nav-item-settings">
       <a href="#/settings" data-nav="settings">⚙ Settings</a>
@@ -20,10 +31,18 @@
 
   <main id="app"></main>
 
+  <section
+    id="playback-controls"
+    class="playback-controls"
+    aria-label="Active playback controls"
+    hidden
+  ></section>
+
   <div id="toast" class="toast hidden"></div>
 
   <script src="api-client.js"></script>
   <script src="target-selection.js"></script>
+  <script src="media-model.js"></script>
   <script src="components/poster-grid.js"></script>
   <script src="components/detail-view.js"></script>
   <script src="components/settings-view.js"></script>

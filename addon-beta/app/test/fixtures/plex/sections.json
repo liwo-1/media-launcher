@@ -1,0 +1,31 @@
+{
+  "MediaContainer": {
+    "Directory": [
+      {
+        "key": "1",
+        "title": "Movies",
+        "type": "movie",
+        "Location": [
+          { "path": "/srv/media/Movies" },
+          { "path": "/srv/archive/Movies" }
+        ]
+      },
+      {
+        "key": "2",
+        "title": "Television",
+        "type": "show",
+        "Location": [
+          { "path": "/srv/media/Television" }
+        ]
+      },
+      {
+        "key": "3",
+        "title": "Music",
+        "type": "artist",
+        "Location": [
+          { "path": "/srv/media/Music" }
+        ]
+      }
+    ]
+  }
+}

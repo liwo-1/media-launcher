@@ -1,0 +1,16 @@
+{
+  "MediaContainer": {
+    "Metadata": [
+      {
+        "ratingKey": "210",
+        "parentRatingKey": "200",
+        "type": "season",
+        "title": "Season 1",
+        "parentTitle": "Example Series",
+        "index": 1,
+        "leafCount": 3,
+        "thumb": "/library/metadata/210/thumb/1700000000"
+      }
+    ]
+  }
+}

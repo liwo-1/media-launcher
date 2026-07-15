@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>MediaLauncherPlayerAgent</AssemblyName>
     <RootNamespace>MediaLauncherPlayerAgent</RootNamespace>
-    <Version>1.4.0-beta.1</Version>
+    <Version>1.5.0-beta.1</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -27,6 +27,11 @@
          account and still accept /play requests from the Home Assistant add-on over the LAN. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <ProjectReference Include="..\agent-core\MediaLauncher.Agent.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
   </ItemGroup>
 
 </Project>

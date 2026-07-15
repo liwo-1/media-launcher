@@ -29,6 +29,12 @@ public class SettingsForm : Form
     private readonly TextBox _potPlayerPathBox = new() { Dock = DockStyle.Fill };
     private readonly Label _potPlayerStatusLabel = new() { AutoSize = true, MaximumSize = new Size(430, 0) };
     private readonly ListBox _customPlayersList = new() { Dock = DockStyle.Fill, Height = 110 };
+    private readonly Label _customPlayerDiagnosticsLabel = new()
+    {
+        AutoSize = true,
+        MaximumSize = new Size(430, 0),
+        ForeColor = Color.DimGray,
+    };
     private readonly List<CustomPlayerProfile> _customPlayers;
     private readonly CheckBox _startWithWindowsBox = new() { Text = "Start with Windows", AutoSize = true };
     private bool _resetPairingRequested;
@@ -145,6 +151,35 @@ public class SettingsForm : Form
                 return;
             }
 
+            var duplicateCustomId = _customPlayers
+                .GroupBy(profile => profile.Id, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault(group => group.Count() > 1)?.Key;
+            if (duplicateCustomId is not null)
+            {
+                errorLabel.Text = "Two custom players have the same local profile ID. Remove one and add it again.";
+                errorLabel.Visible = true;
+                tabs.SelectedTab = playersTab;
+                return;
+            }
+            var invalidCustom = _customPlayers
+                .Select(profile => new
+                {
+                    Profile = profile,
+                    Validation = CustomPlayerProfileValidator.Validate(profile, requireExistingPaths: true),
+                })
+                .FirstOrDefault(entry => !entry.Validation.IsValid);
+            if (invalidCustom is not null)
+            {
+                errorLabel.Text = $"Custom player '{invalidCustom.Profile.Name}' is unavailable: " +
+                    string.Join(" ", invalidCustom.Validation.Diagnostics
+                        .Where(diagnostic => diagnostic.Severity == "error")
+                        .Select(diagnostic => diagnostic.Message));
+                errorLabel.Visible = true;
+                tabs.SelectedTab = playersTab;
+                _customPlayersList.SelectedItem = invalidCustom.Profile;
+                return;
+            }
+
             Config = new AppConfig
             {
                 HomeAssistantUrl = _urlBox.Text.Trim(),
@@ -242,7 +277,8 @@ public class SettingsForm : Form
             AutoSize = true,
             MaximumSize = new Size(500, 0),
             Text = "Installed players are detected automatically. Optional overrides support portable installations. " +
-                   "MPC-HC provides progress monitoring; VLC, PotPlayer, and custom profiles currently launch only.",
+                   "MPC-HC provides progress monitoring and owned-process stop. VLC adds authenticated localhost " +
+                   "status, pause, seek, and stop. PotPlayer and custom profiles provide launch and owned-process stop.",
         };
         layout.Controls.Add(intro, 0, 0);
         layout.SetColumnSpan(intro, 2);
@@ -276,6 +312,8 @@ public class SettingsForm : Form
 
         layout.Controls.Add(FieldLabel("Custom players:"), 0, 7);
         layout.Controls.Add(_customPlayersList, 1, 7);
+        layout.Controls.Add(FieldLabel("Selected profile diagnostics:"), 0, 8);
+        layout.Controls.Add(_customPlayerDiagnosticsLabel, 1, 8);
         var customButtons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
         var add = new Button { Text = "Add...", AutoSize = true };
         var edit = new Button { Text = "Edit...", AutoSize = true };
@@ -283,12 +321,13 @@ public class SettingsForm : Form
         customButtons.Controls.Add(add);
         customButtons.Controls.Add(edit);
         customButtons.Controls.Add(remove);
-        layout.Controls.Add(customButtons, 1, 8);
+        layout.Controls.Add(customButtons, 1, 9);
 
         add.Click += (_, _) => AddCustomPlayer();
         edit.Click += (_, _) => EditSelectedCustomPlayer();
         remove.Click += (_, _) => RemoveSelectedCustomPlayer();
         _customPlayersList.DoubleClick += (_, _) => EditSelectedCustomPlayer();
+        _customPlayersList.SelectedIndexChanged += (_, _) => RefreshCustomPlayerDiagnostics();
         _mpcInstallLink.LinkClicked += (_, _) =>
             Process.Start(new ProcessStartInfo(MpcDownloadUrl) { UseShellExecute = true });
 
@@ -388,6 +427,22 @@ public class SettingsForm : Form
             if (selected is not null) _customPlayersList.SelectedItem = selected;
         }
         _customPlayersList.EndUpdate();
+        RefreshCustomPlayerDiagnostics();
+    }
+
+    private void RefreshCustomPlayerDiagnostics()
+    {
+        if (_customPlayersList.SelectedItem is not CustomPlayerProfile selected)
+        {
+            _customPlayerDiagnosticsLabel.Text = "Select a custom profile to inspect it.";
+            _customPlayerDiagnosticsLabel.ForeColor = Color.DimGray;
+            return;
+        }
+        var validation = CustomPlayerProfileValidator.Validate(selected, requireExistingPaths: true);
+        _customPlayerDiagnosticsLabel.Text = validation.IsValid
+            ? "✓ Ready. The executable and optional working directory are available."
+            : string.Join(Environment.NewLine, validation.Diagnostics.Select(diagnostic => diagnostic.Message));
+        _customPlayerDiagnosticsLabel.ForeColor = validation.IsValid ? Color.SeaGreen : Color.Firebrick;
     }
 
     private void LoadLogText()
@@ -433,14 +488,24 @@ public class SettingsForm : Form
     {
         var found = WindowsPlayerLocator.FindVlc(OptionalPath(_vlcPathBox.Text));
         if (found is null) SetMissing(_vlcStatusLabel, "VLC not found automatically.");
-        else SetDetected(_vlcStatusLabel, found);
+        else
+        {
+            SetDetected(_vlcStatusLabel, found);
+            _vlcStatusLabel.Text += Environment.NewLine +
+                "Status and controls use a random password on a per-session 127.0.0.1 HTTP endpoint.";
+        }
     }
 
     private void DetectPotPlayer()
     {
         var found = WindowsPlayerLocator.FindPotPlayer(OptionalPath(_potPlayerPathBox.Text));
         if (found is null) SetMissing(_potPlayerStatusLabel, "PotPlayer not found automatically.");
-        else SetDetected(_potPlayerStatusLabel, found);
+        else
+        {
+            SetDetected(_potPlayerStatusLabel, found);
+            _potPlayerStatusLabel.Text += Environment.NewLine +
+                "Launch and stop are available; status is not advertised because PotPlayer has no reliable supported status interface.";
+        }
     }
 
     private static void SetDetected(Label label, string path)

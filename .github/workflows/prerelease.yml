@@ -1,0 +1,372 @@
+name: Publish prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: Exact beta app version from addon-beta/config.yaml
+        required: true
+        type: string
+      confirmation:
+        description: Type publish-prerelease to create the tag and GitHub prerelease
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prerelease-${{ inputs.app_version }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.release.outputs.app_version }}
+      windows_agent_version: ${{ steps.release.outputs.windows_agent_version }}
+      linux_agent_version: ${{ steps.release.outputs.linux_agent_version }}
+      stable_version: ${{ steps.release.outputs.stable_version }}
+      tag: ${{ steps.release.outputs.tag }}
+      windows_agent_asset: ${{ steps.release.outputs.windows_agent_asset }}
+      linux_x64_asset: ${{ steps.release.outputs.linux_x64_asset }}
+      linux_arm64_asset: ${{ steps.release.outputs.linux_arm64_asset }}
+      checksum_asset: ${{ steps.release.outputs.checksum_asset }}
+      acceptance_asset: ${{ steps.release.outputs.acceptance_asset }}
+    steps:
+      - name: Refuse an unsafe dispatch
+        shell: bash
+        env:
+          REF: ${{ github.ref }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "$REF" = "refs/heads/beta" || {
+            echo "Prereleases must be dispatched from the beta branch." >&2
+            exit 1
+          }
+          test "$CONFIRMATION" = "publish-prerelease" || {
+            echo "The confirmation input did not match publish-prerelease." >&2
+            exit 1
+          }
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require the exact candidate on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {
+            echo "The beta candidate must already be merged into main." >&2
+            exit 1
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: addon-beta/app/package-lock.json
+      - id: release
+        name: Validate release metadata
+        env:
+          APP_VERSION_INPUT: ${{ inputs.app_version }}
+        run: >-
+          node scripts/release-info.js
+          --expect-app "$APP_VERSION_INPUT"
+          --github-output "$GITHUB_OUTPUT"
+      - run: node scripts/check-catalog.js
+      - run: node --test scripts/*.test.js
+      - run: npm ci
+        working-directory: addon-beta/app
+      - run: npm run lint
+        working-directory: addon-beta/app
+      - run: npm test
+        working-directory: addon-beta/app
+      - run: docker build --tag media-launcher-prerelease:${{ steps.release.outputs.app_version }} .
+        working-directory: addon-beta
+
+  windows-agent:
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore agent and contract tests
+        run: |
+          dotnet restore player-agent-app/PlayerAgent.csproj
+          dotnet restore player-agent-app/tests/PlayerAgent.Tests.csproj
+          dotnet restore release-tests/windows-agent-contract-tests/WindowsAgentContractTests.csproj
+      - name: Run focused Windows agent tests
+        run: >-
+          dotnet run
+          --project player-agent-app/tests/PlayerAgent.Tests.csproj
+          --configuration Release
+          --no-restore
+      - name: Run Windows agent contract tests
+        run: >-
+          dotnet run
+          --project release-tests/windows-agent-contract-tests/WindowsAgentContractTests.csproj
+          --configuration Release
+          --no-restore
+      - name: Publish Windows agent
+        shell: pwsh
+        run: |
+          $publish = Join-Path $env:RUNNER_TEMP 'windows-agent-publish'
+          $output = Join-Path $env:RUNNER_TEMP 'windows-agent-asset'
+          dotnet publish player-agent-app/PlayerAgent.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugSymbols=false `
+            -p:DebugType=None `
+            --output $publish
+          New-Item -ItemType Directory -Path $output -ErrorAction Stop | Out-Null
+          Copy-Item `
+            -LiteralPath (Join-Path $publish 'MediaLauncherPlayerAgent.exe') `
+            -Destination (Join-Path $output '${{ needs.validate.outputs.windows_agent_asset }}')
+          & ./scripts/Test-PlayerAgentArtifact.ps1 `
+            -PublishDirectory $output `
+            -ExecutableName '${{ needs.validate.outputs.windows_agent_asset }}' `
+            -ExpectedVersion '${{ needs.validate.outputs.windows_agent_version }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-agent-asset
+          path: ${{ runner.temp }}\windows-agent-asset\${{ needs.validate.outputs.windows_agent_asset }}
+          if-no-files-found: error
+          retention-days: 14
+
+  linux-agent:
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [linux-x64, linux-arm64]
+    env:
+      ASSET_NAME: ${{ matrix.rid == 'linux-x64' && needs.validate.outputs.linux_x64_asset || needs.validate.outputs.linux_arm64_asset }}
+      AGENT_VERSION: ${{ needs.validate.outputs.linux_agent_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore and run Linux contract tests
+        if: matrix.rid == 'linux-x64'
+        run: |
+          dotnet restore agent-core-tests/MediaLauncher.Agent.Core.Tests.csproj
+          dotnet restore linux-agent-tests/MediaLauncher.LinuxAgent.Tests.csproj
+          dotnet run --project agent-core-tests/MediaLauncher.Agent.Core.Tests.csproj --configuration Release --no-restore
+          dotnet run --project linux-agent-tests/MediaLauncher.LinuxAgent.Tests.csproj --configuration Release --no-restore
+      - name: Restore Linux agent for target runtime
+        run: >-
+          dotnet restore linux-agent/MediaLauncher.LinuxAgent.csproj
+          --runtime ${{ matrix.rid }}
+      - name: Publish and validate Linux agent
+        shell: pwsh
+        run: |
+          $publish = Join-Path $env:RUNNER_TEMP 'linux-agent-publish-${{ matrix.rid }}'
+          $artifact = Join-Path $env:RUNNER_TEMP 'linux-agent-artifact-${{ matrix.rid }}'
+          dotnet publish linux-agent/MediaLauncher.LinuxAgent.csproj `
+            --configuration Release `
+            --runtime '${{ matrix.rid }}' `
+            --self-contained true `
+            --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugSymbols=false `
+            -p:DebugType=None `
+            --output $publish
+          New-Item -ItemType Directory -Path $artifact -ErrorAction Stop | Out-Null
+          Copy-Item `
+            -LiteralPath (Join-Path $publish 'media-launcher-linux-agent') `
+            -Destination $artifact
+          $validation = @{
+            PublishDirectory = $artifact
+            ExpectedRuntimeIdentifier = '${{ matrix.rid }}'
+            ExpectedVersion = '${{ needs.validate.outputs.linux_agent_version }}'
+          }
+          if ('${{ matrix.rid }}' -eq 'linux-x64') {
+            $validation.ExecuteVersionCheck = $true
+          }
+          & ./scripts/Test-LinuxAgentArtifact.ps1 @validation
+      - name: Build deterministic Linux release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish="$RUNNER_TEMP/linux-agent-publish-${{ matrix.rid }}"
+          stage="$RUNNER_TEMP/linux-agent-package-${{ matrix.rid }}"
+          assets="$RUNNER_TEMP/linux-agent-asset-${{ matrix.rid }}"
+          audit="$RUNNER_TEMP/linux-agent-archive-audit-${{ matrix.rid }}"
+          install -d -m 755 "$stage" "$assets" "$audit"
+          sh -n linux-agent/packaging/install.sh linux-agent/packaging/uninstall.sh
+          install -m 755 "$publish/media-launcher-linux-agent" "$stage/media-launcher-linux-agent"
+          install -m 755 linux-agent/packaging/install.sh "$stage/install.sh"
+          install -m 755 linux-agent/packaging/uninstall.sh "$stage/uninstall.sh"
+          install -m 644 linux-agent/packaging/media-launcher-agent.service "$stage/media-launcher-agent.service"
+          install -m 644 linux-agent/packaging/config.example.json "$stage/config.example.json"
+          install -m 644 linux-agent/README.md "$stage/README.md"
+          tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner --format=posix \
+            --pax-option=delete=atime,delete=ctime \
+            -I 'gzip -n' -cf "$assets/$ASSET_NAME" -C "$stage" .
+          tar -tzf "$assets/$ASSET_NAME"
+          tar -xzf "$assets/$ASSET_NAME" -C "$audit"
+
+          mapfile -t actual < <(find "$audit" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)
+          mapfile -t expected < <(printf '%s\n' \
+            README.md config.example.json install.sh media-launcher-agent.service \
+            media-launcher-linux-agent uninstall.sh | sort)
+          if [[ "${actual[*]}" != "${expected[*]}" ]]; then
+            printf 'Expected archive files: %s\n' "${expected[*]}" >&2
+            printf 'Actual archive files: %s\n' "${actual[*]}" >&2
+            exit 1
+          fi
+          if find "$audit" -type l -print -quit | grep -q .; then
+            echo "Linux release archive must not contain symbolic links." >&2
+            exit 1
+          fi
+          test "$(stat -c '%a' "$audit/media-launcher-linux-agent")" = 755
+          test "$(stat -c '%a' "$audit/install.sh")" = 755
+          test "$(stat -c '%a' "$audit/uninstall.sh")" = 755
+          test "$(stat -c '%a' "$audit/media-launcher-agent.service")" = 644
+          test "$(stat -c '%a' "$audit/config.example.json")" = 644
+          test "$(stat -c '%a' "$audit/README.md")" = 644
+          sh -n "$audit/install.sh" "$audit/uninstall.sh"
+          grep -Fq 'DOTNET_BUNDLE_EXTRACT_BASE_DIR=%t/media-launcher-agent/dotnet' \
+            "$audit/media-launcher-agent.service"
+          grep -Fq 'RuntimeDirectory=media-launcher-agent' "$audit/media-launcher-agent.service"
+
+          if [[ '${{ matrix.rid }}' == 'linux-x64' ]]; then
+            install -d -m 700 "$RUNNER_TEMP/dotnet-bundle-archive-audit"
+            export DOTNET_BUNDLE_EXTRACT_BASE_DIR="$RUNNER_TEMP/dotnet-bundle-archive-audit"
+            set +e
+            "$audit/media-launcher-linux-agent" diagnose --config "$audit/config.example.json" \
+              > "$audit/diagnose.json"
+            diagnose_status=$?
+            set -e
+            if [[ "$diagnose_status" -ne 0 && "$diagnose_status" -ne 2 ]]; then
+              echo "Packaged Linux agent diagnose failed with exit $diagnose_status." >&2
+              exit 1
+            fi
+            node -e 'const fs=require("fs");const value=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(value.version!==process.argv[2]||value.configured!==true||value.allowedRootCount!==1)process.exit(1)' \
+              "$audit/diagnose.json" "$AGENT_VERSION"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-agent-${{ matrix.rid }}
+          path: ${{ runner.temp }}/linux-agent-asset-${{ matrix.rid }}/${{ env.ASSET_NAME }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release-assets:
+    needs: [validate, windows-agent, linux-agent]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-agent-asset
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: linux-agent-*
+          path: dist
+          merge-multiple: true
+      - name: Refuse missing or unexpected release assets
+        shell: bash
+        env:
+          WINDOWS_ASSET: ${{ needs.validate.outputs.windows_agent_asset }}
+          LINUX_X64_ASSET: ${{ needs.validate.outputs.linux_x64_asset }}
+          LINUX_ARM64_ASSET: ${{ needs.validate.outputs.linux_arm64_asset }}
+        run: |
+          set -euo pipefail
+          mapfile -t actual < <(find dist -maxdepth 1 -type f -printf '%f\n' | sort)
+          mapfile -t expected < <(printf '%s\n' "$WINDOWS_ASSET" "$LINUX_X64_ASSET" "$LINUX_ARM64_ASSET" | sort)
+          if [[ "${actual[*]}" != "${expected[*]}" ]]; then
+            printf 'Expected assets: %s\n' "${expected[*]}" >&2
+            printf 'Actual assets: %s\n' "${actual[*]}" >&2
+            exit 1
+          fi
+      - name: Create fail-closed acceptance record and checksums
+        shell: bash
+        env:
+          APP_VERSION: ${{ needs.validate.outputs.app_version }}
+          WINDOWS_ASSET: ${{ needs.validate.outputs.windows_agent_asset }}
+          LINUX_X64_ASSET: ${{ needs.validate.outputs.linux_x64_asset }}
+          LINUX_ARM64_ASSET: ${{ needs.validate.outputs.linux_arm64_asset }}
+          ACCEPTANCE_ASSET: ${{ needs.validate.outputs.acceptance_asset }}
+          CHECKSUM_ASSET: ${{ needs.validate.outputs.checksum_asset }}
+          CANDIDATE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          node scripts/release-info.js \
+            --expect-app "$APP_VERSION" \
+            --acceptance-output "dist/$ACCEPTANCE_ASSET" \
+            --commit "$CANDIDATE_COMMIT"
+          cd dist
+          sha256sum --binary \
+            "$WINDOWS_ASSET" \
+            "$LINUX_X64_ASSET" \
+            "$LINUX_ARM64_ASSET" \
+            "$ACCEPTANCE_ASSET" > "$CHECKSUM_ASSET"
+          sha256sum --check "$CHECKSUM_ASSET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prerelease-assets
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [validate, release-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: prerelease-assets
+          path: dist
+      - name: Verify release checksums
+        working-directory: dist
+        env:
+          CHECKSUM_ASSET: ${{ needs.validate.outputs.checksum_asset }}
+        run: sha256sum --check "$CHECKSUM_ASSET"
+      - name: Refuse to overwrite a tag or release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; prereleases are immutable." >&2
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; prereleases are immutable." >&2
+            exit 1
+          fi
+      - name: Create immutable GitHub prerelease and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          APP_VERSION: ${{ needs.validate.outputs.app_version }}
+          TARGET_COMMIT: ${{ github.sha }}
+        run: >-
+          gh release create "$TAG"
+          dist/*
+          --prerelease
+          --target "$TARGET_COMMIT"
+          --title "Media Launcher $APP_VERSION"
+          --generate-notes

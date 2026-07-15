@@ -1,0 +1,10 @@
+{
+  "homeAssistantUrl": "http://home-assistant.local:8089",
+  "port": 7777,
+  "displayName": "Living room Linux",
+  "defaultPlayerId": "mpv",
+  "allowedMediaRoots": [
+    "/mnt/media"
+  ],
+  "customPlayers": []
+}

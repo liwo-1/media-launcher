@@ -1,0 +1,13 @@
+{
+  "requestId": "33333333-3333-4333-8333-333333333333",
+  "playerId": "mpc-hc",
+  "media": {
+    "sourceType": "file",
+    "path": "\\\\fixture-nas\\Media\\Example Film.mkv",
+    "title": "Example Film"
+  },
+  "options": {
+    "fullscreen": true,
+    "startPositionMs": 12500
+  }
+}

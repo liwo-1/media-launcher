@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
@@ -9,57 +7,17 @@ using Microsoft.Extensions.Logging;
 
 namespace MediaLauncherPlayerAgent;
 
-public class PlayRequest
+public class SeekSessionRequest
 {
-    [JsonPropertyName("path")]
-    public string? Path { get; set; }
-}
-
-public class PairRequest
-{
-    [JsonPropertyName("secret")]
-    public string? Secret { get; set; }
-}
-
-public class SessionMediaRequest
-{
-    [JsonPropertyName("sourceType")]
-    public string? SourceType { get; set; }
-
-    [JsonPropertyName("path")]
-    public string? Path { get; set; }
-
-    [JsonPropertyName("title")]
-    public string? Title { get; set; }
-}
-
-public class CreateSessionRequest
-{
-    [JsonPropertyName("requestId")]
-    public string? RequestId { get; set; }
-
-    [JsonPropertyName("playerId")]
-    public string? PlayerId { get; set; }
-
-    [JsonPropertyName("media")]
-    public SessionMediaRequest? Media { get; set; }
-
-    [JsonPropertyName("options")]
-    public SessionOptionsRequest? Options { get; set; }
-}
-
-public class SessionOptionsRequest
-{
-    [JsonPropertyName("fullscreen")]
-    public bool Fullscreen { get; set; } = true;
-
-    [JsonPropertyName("startPositionMs")]
-    public long StartPositionMs { get; set; }
+    [JsonPropertyName("positionMs")]
+    public long? PositionMs { get; set; }
 }
 
 public static class PlayServer
 {
+    private static readonly long UnauthorizedLogIntervalTicks = TimeSpan.FromSeconds(30).Ticks;
     private static AppConfig _config = new();
+    private static long _lastUnauthorizedLogUtcTicks;
 
     public static void UpdateConfig(AppConfig config) => _config = config;
 
@@ -67,12 +25,18 @@ public static class PlayServer
     {
         UpdateConfig(config);
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(config.Port));
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            options.ListenAnyIP(config.Port);
+            options.Limits.MaxRequestBodySize = 32 * 1024;
+            options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
+        });
         builder.Logging.ClearProviders();
 
         var app = builder.Build();
         app.Use(async (context, next) =>
         {
+            context.Response.Headers.XContentTypeOptions = "nosniff";
             if (context.Request.Path == "/health" || context.Request.Path == "/pair")
             {
                 await next();
@@ -92,7 +56,7 @@ public static class PlayServer
                 return;
             }
 
-            Logger.Log($"{context.Request.Path}: rejected unauthorized request from {context.Connection.RemoteIpAddress}");
+            LogUnauthorizedRequest(context);
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "Missing or incorrect bearer token" });
         });
@@ -102,7 +66,7 @@ public static class PlayServer
             PairRequest? body;
             try
             {
-                body = await ctx.Request.ReadFromJsonAsync<PairRequest>();
+                body = await ctx.Request.ReadFromJsonAsync<PairRequest>(ctx.RequestAborted);
             }
             catch (JsonException)
             {
@@ -110,10 +74,10 @@ public static class PlayServer
             }
 
             var secret = body?.Secret?.Trim();
-            if (secret is null || secret.Length != 48 || secret.Any(c => !Uri.IsHexDigit(c)))
+            if (!BearerAuthentication.IsPairingSecret(secret))
                 return Results.Json(new { error = "Pairing secret must be 48 hexadecimal characters" }, statusCode: 400);
 
-            await PairingState.MutationLock.WaitAsync();
+            await PairingState.MutationLock.WaitAsync(ctx.RequestAborted);
             try
             {
                 var activeConfig = _config;
@@ -124,9 +88,17 @@ public static class PlayServer
                         new { error = "Player agent is already paired; reset pairing locally before pairing again" },
                         statusCode: 409);
                 }
+                if (string.IsNullOrEmpty(activeConfig.RegistrationSecret) ||
+                    !BearerAuthentication.IsAuthorized($"Bearer {secret}", activeConfig.RegistrationSecret))
+                {
+                    Logger.Log($"/pair: rejected invalid enrollment proof from {ctx.Connection.RemoteIpAddress}");
+                    return Results.Json(
+                        new { error = "Pairing requires the agent's current enrollment credential" },
+                        statusCode: 403);
+                }
 
                 var previousRegistrationSecret = activeConfig.RegistrationSecret;
-                activeConfig.SharedSecret = secret;
+                activeConfig.SharedSecret = secret!;
                 activeConfig.RegistrationSecret = "";
                 try
                 {
@@ -155,10 +127,10 @@ public static class PlayServer
 
         app.MapPost("/play", async (HttpContext ctx) =>
         {
-            PlayRequest? body;
+            LegacyPlayRequest? body;
             try
             {
-                body = await ctx.Request.ReadFromJsonAsync<PlayRequest>();
+                body = await ctx.Request.ReadFromJsonAsync<LegacyPlayRequest>(ctx.RequestAborted);
             }
             catch (JsonException ex)
             {
@@ -170,17 +142,16 @@ public static class PlayServer
             if (string.IsNullOrWhiteSpace(filePath))
                 return Results.Json(new { error = "missing \"path\" in request body" }, statusCode: 400);
 
-            Logger.Log($"/play: request for '{filePath}'");
             try
             {
                 var activeConfig = _config;
                 await PlayerSessionManager.CreateAsync(null, null, filePath, activeConfig);
-                Logger.Log($"/play: launched the default player for '{filePath}'");
+                Logger.Log("/play: launched the default player.");
                 return Results.Json(new { ok = true });
             }
             catch (Exception ex)
             {
-                Logger.Log($"/play: failed for '{filePath}': {ex}");
+                Logger.Log($"/play: failed: {ex}");
                 var status = ex is ArgumentException or UnauthorizedAccessException ? 400 : 500;
                 return Results.Json(new { error = ex.Message }, statusCode: status);
             }
@@ -188,10 +159,48 @@ public static class PlayServer
 
         app.MapGet("/status", async () =>
         {
+            var session = PlayerSessionManager.Current;
+            if (session is null || session.EndReason is not null)
+            {
+                return Results.Json(new MpcStatusResult
+                {
+                    State = 0,
+                    Position = 0,
+                    Duration = 0,
+                });
+            }
+            if (!PlayerCapabilities.Supports(session.Adapter.Descriptor, PlayerCapabilities.StatusState))
+            {
+                return Results.Json(
+                    new { error = $"{session.Adapter.Descriptor.DisplayName} does not provide playback status" },
+                    statusCode: 502);
+            }
             try
             {
-                var status = await MpcStatusReader.GetStatusAsync();
-                return Results.Json(status);
+                var status = await session.Adapter.GetStatusAsync();
+                PlayerSessionManager.RememberStatus(session, status);
+                if (session.EndReason is not null)
+                {
+                    return Results.Json(new MpcStatusResult
+                    {
+                        File = status.File,
+                        State = 0,
+                        Position = status.PositionMs,
+                        Duration = status.DurationMs,
+                    });
+                }
+                return Results.Json(new MpcStatusResult
+                {
+                    File = status.File,
+                    State = status.State switch
+                    {
+                        "playing" => 2,
+                        "paused" => 1,
+                        _ => 0,
+                    },
+                    Position = status.PositionMs,
+                    Duration = status.DurationMs,
+                });
             }
             catch (Exception ex)
             {
@@ -213,7 +222,14 @@ public static class PlayServer
                     platform = "windows",
                     architecture = AgentIdentity.Architecture,
                 },
-                capabilities = new[] { "players.list", "sessions.create", "sessions.status" },
+                capabilities = new[]
+                {
+                    AgentCapabilities.PlayersList,
+                    AgentCapabilities.SessionsCreate,
+                    AgentCapabilities.SessionsStatus,
+                    AgentCapabilities.SessionsControl,
+                    AgentCapabilities.SessionsEndReasons,
+                },
                 acceptedPathKinds = new[] { "windows-unc" },
                 maxConcurrentSessions = 1,
                 defaultPlayerId = PlayerCatalog.GetDefaultPlayerId(activeConfig),
@@ -226,7 +242,7 @@ public static class PlayServer
             CreateSessionRequest? body;
             try
             {
-                body = await ctx.Request.ReadFromJsonAsync<CreateSessionRequest>();
+                body = await ctx.Request.ReadFromJsonAsync<CreateSessionRequest>(ctx.RequestAborted);
             }
             catch (JsonException)
             {
@@ -242,6 +258,10 @@ public static class PlayServer
             if (!string.IsNullOrWhiteSpace(request.RequestId) &&
                 !Guid.TryParse(request.RequestId, out _))
                 return Results.Json(new { error = "requestId must be a UUID" }, statusCode: 400);
+            if (request.Options?.StartPositionMs is < 0 or > SessionControlLimits.MaxSeekPositionMs)
+                return Results.Json(
+                    new { error = "options.startPositionMs must be between 0 and seven days" },
+                    statusCode: 400);
 
             try
             {
@@ -253,17 +273,19 @@ public static class PlayServer
                     media.Title ?? "",
                     Math.Max(0, request.Options?.StartPositionMs ?? 0),
                     request.Options?.Fullscreen ?? true);
-                Logger.Log($"/v2/sessions: launched '{session.PlayerId}' for '{media.Path}'");
+                Logger.Log($"/v2/sessions: launched player '{session.PlayerId}'.");
                 return Results.Json(new
                 {
                     sessionId = session.SessionId,
                     playerId = session.PlayerId,
-                    state = "starting",
+                    state = session.EndReason is null ? "starting" : "stopped",
+                    endReason = session.EndReason,
+                    capabilities = session.Adapter.Descriptor.Capabilities,
                 });
             }
             catch (Exception ex)
             {
-                Logger.Log($"/v2/sessions: failed for '{media.Path}': {ex}");
+                Logger.Log($"/v2/sessions: failed: {ex}");
                 var status = ex is ArgumentException or UnauthorizedAccessException ? 400 : 500;
                 return Results.Json(new { error = ex.Message }, statusCode: status);
             }
@@ -273,10 +295,17 @@ public static class PlayServer
         {
             var session = PlayerSessionManager.Find(sessionId);
             if (session is null)
-                return Results.Json(new { error = "Playback session was not found" }, statusCode: 404);
+                return SessionNotFound();
+            if (session.EndReason is not null) return EndedSessionStatus(session);
+            if (!PlayerCapabilities.Supports(session.Adapter.Descriptor, PlayerCapabilities.StatusState))
+            {
+                return CapabilityNotSupported(session, PlayerCapabilities.StatusState);
+            }
             try
             {
                 var status = await session.Adapter.GetStatusAsync();
+                PlayerSessionManager.RememberStatus(session, status);
+                if (session.EndReason is not null) return EndedSessionStatus(session);
                 return Results.Json(new
                 {
                     sessionId = session.SessionId,
@@ -285,11 +314,218 @@ public static class PlayServer
                     state = status.State,
                     positionMs = status.PositionMs,
                     durationMs = status.DurationMs,
+                    endReason = (string?)null,
                 });
             }
             catch (Exception ex)
             {
+                if (session.EndReason is not null) return EndedSessionStatus(session);
                 Logger.Log($"/v2/sessions/{sessionId}: status failed: {ex.Message}");
+                return Results.Json(new { error = ex.Message }, statusCode: 502);
+            }
+        });
+
+        app.MapPost("/v2/sessions/{sessionId}/control", async (string sessionId, HttpContext ctx) =>
+        {
+            SessionControlRequest? body;
+            try
+            {
+                body = await ctx.Request.ReadFromJsonAsync<SessionControlRequest>(ctx.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                return Results.Json(new { error = "Invalid JSON request body" }, statusCode: 400);
+            }
+
+            var action = body?.Action?.Trim().ToLowerInvariant();
+            if (action is not ("pause" or "resume" or "seek" or "stop"))
+            {
+                return Results.Json(
+                    new { error = "action must be pause, resume, seek, or stop" },
+                    statusCode: 400);
+            }
+            if (action == "seek" && (body?.PositionMs is null ||
+                                     body.PositionMs < 0 ||
+                                     body.PositionMs > SessionControlLimits.MaxSeekPositionMs))
+            {
+                return Results.Json(
+                    new { error = "positionMs must be between 0 and seven days for seek" },
+                    statusCode: 400);
+            }
+
+            try
+            {
+                AgentPlaybackSession? session;
+                string state;
+                switch (action)
+                {
+                    case "pause":
+                        session = await PlayerSessionManager.SetPausedAsync(sessionId, paused: true);
+                        state = "paused";
+                        break;
+                    case "resume":
+                        session = await PlayerSessionManager.SetPausedAsync(sessionId, paused: false);
+                        state = "playing";
+                        break;
+                    case "seek":
+                        session = await PlayerSessionManager.SeekAsync(sessionId, body!.PositionMs!.Value);
+                        state = "seeking";
+                        break;
+                    default:
+                        session = await PlayerSessionManager.StopAsync(sessionId);
+                        state = "stopped";
+                        break;
+                }
+                return session is null
+                    ? SessionNotFound()
+                    : Results.Json(new
+                    {
+                        sessionId,
+                        action,
+                        state,
+                        positionMs = action == "seek" ? body!.PositionMs : null,
+                        endReason = session.EndReason,
+                    });
+            }
+            catch (PlayerSessionControlException ex)
+            {
+                return SessionControlError(ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(
+                    new { error = ex.Message, code = "control_rejected" },
+                    statusCode: 409);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"/v2/sessions/{sessionId}/control: failed: {ex.Message}");
+                return Results.Json(new { error = ex.Message }, statusCode: 502);
+            }
+        });
+
+        app.MapPost("/v2/sessions/{sessionId}/pause", async (string sessionId) =>
+        {
+            try
+            {
+                var session = await PlayerSessionManager.PauseAsync(sessionId);
+                return session is null
+                    ? SessionNotFound()
+                    : Results.Json(new { sessionId, state = "paused" });
+            }
+            catch (PlayerSessionControlException ex)
+            {
+                return SessionControlError(ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(
+                    new { error = ex.Message, code = "control_rejected" },
+                    statusCode: 409);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"/v2/sessions/{sessionId}/pause: failed: {ex.Message}");
+                return Results.Json(new { error = ex.Message }, statusCode: 502);
+            }
+        });
+
+        app.MapPost("/v2/sessions/{sessionId}/resume", async (string sessionId) =>
+        {
+            try
+            {
+                var session = await PlayerSessionManager.ResumeAsync(sessionId);
+                return session is null
+                    ? SessionNotFound()
+                    : Results.Json(new { sessionId, state = "playing" });
+            }
+            catch (PlayerSessionControlException ex)
+            {
+                return SessionControlError(ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(
+                    new { error = ex.Message, code = "control_rejected" },
+                    statusCode: 409);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"/v2/sessions/{sessionId}/resume: failed: {ex.Message}");
+                return Results.Json(new { error = ex.Message }, statusCode: 502);
+            }
+        });
+
+        app.MapPost("/v2/sessions/{sessionId}/seek", async (string sessionId, HttpContext ctx) =>
+        {
+            SeekSessionRequest? body;
+            try
+            {
+                body = await ctx.Request.ReadFromJsonAsync<SeekSessionRequest>(ctx.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                return Results.Json(new { error = "Invalid JSON request body" }, statusCode: 400);
+            }
+            if (body?.PositionMs is null ||
+                body.PositionMs < 0 ||
+                body.PositionMs > SessionControlLimits.MaxSeekPositionMs)
+            {
+                return Results.Json(
+                    new { error = "positionMs must be between 0 and seven days" },
+                    statusCode: 400);
+            }
+
+            try
+            {
+                var session = await PlayerSessionManager.SeekAsync(sessionId, body.PositionMs.Value);
+                return session is null
+                    ? SessionNotFound()
+                    : Results.Json(new
+                    {
+                        sessionId,
+                        state = "seeking",
+                        positionMs = body.PositionMs.Value,
+                    });
+            }
+            catch (PlayerSessionControlException ex)
+            {
+                return SessionControlError(ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(
+                    new { error = ex.Message, code = "control_rejected" },
+                    statusCode: 409);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"/v2/sessions/{sessionId}/seek: failed: {ex.Message}");
+                return Results.Json(new { error = ex.Message }, statusCode: 502);
+            }
+        });
+
+        app.MapPost("/v2/sessions/{sessionId}/stop", async (string sessionId) =>
+        {
+            try
+            {
+                var session = await PlayerSessionManager.StopAsync(sessionId);
+                return session is null
+                    ? SessionNotFound()
+                    : Results.Json(new
+                    {
+                        sessionId,
+                        state = "stopped",
+                        endReason = session.EndReason,
+                    });
+            }
+            catch (PlayerSessionControlException ex)
+            {
+                return SessionControlError(ex);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"/v2/sessions/{sessionId}/stop: failed: {ex.Message}");
                 return Results.Json(new { error = ex.Message }, statusCode: 502);
             }
         });
@@ -298,21 +534,68 @@ public static class PlayServer
         {
             ok = true,
             paired = !string.IsNullOrEmpty(_config.SharedSecret),
-            protocolVersion = 1,
-            supportedProtocolVersions = new[] { 1, 2 },
+            protocolVersion = AgentProtocol.LegacyVersion,
+            supportedProtocolVersions = AgentProtocol.SupportedVersions,
         }));
         await app.StartAsync();
         return app;
     }
 
+    private static void LogUnauthorizedRequest(HttpContext context)
+    {
+        if (!ShouldLogUnauthorizedRequest(DateTimeOffset.UtcNow.UtcTicks)) return;
+        Logger.Log($"Rejected an unauthorized agent request from {context.Connection.RemoteIpAddress}.");
+    }
+
+    internal static bool ShouldLogUnauthorizedRequest(long nowUtcTicks)
+    {
+        var previous = Interlocked.Read(ref _lastUnauthorizedLogUtcTicks);
+        if (previous != 0 && nowUtcTicks - previous < UnauthorizedLogIntervalTicks) return false;
+        return Interlocked.CompareExchange(ref _lastUnauthorizedLogUtcTicks, nowUtcTicks, previous) == previous;
+    }
+
+    internal static void ResetUnauthorizedLogLimiterForTests() =>
+        Interlocked.Exchange(ref _lastUnauthorizedLogUtcTicks, 0);
+
     public static bool IsAuthorized(HttpRequest request, string expectedSecret)
     {
-        if (string.IsNullOrEmpty(expectedSecret)) return false;
-        var header = request.Headers.Authorization.ToString();
-        if (!header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return false;
-        var supplied = header[7..];
-        var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expectedSecret));
-        var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied));
-        return CryptographicOperations.FixedTimeEquals(expectedHash, suppliedHash);
+        return BearerAuthentication.IsAuthorized(
+            request.Headers.Authorization.ToString(),
+            expectedSecret);
+    }
+
+    private static IResult SessionNotFound() =>
+        Results.Json(new { error = "Playback session was not found" }, statusCode: 404);
+
+    private static IResult CapabilityNotSupported(AgentPlaybackSession session, string capability) =>
+        Results.Json(new
+        {
+            error = $"{session.Adapter.Descriptor.DisplayName} does not support '{capability}'.",
+            code = "capability_not_supported",
+            capability,
+        }, statusCode: 409);
+
+    private static IResult SessionControlError(PlayerSessionControlException exception) =>
+        Results.Json(new
+        {
+            error = exception.Message,
+            code = exception.Code,
+            capability = exception.Capability,
+        }, statusCode: 409);
+
+    private static IResult EndedSessionStatus(AgentPlaybackSession session)
+    {
+        var lastStatus = session.LastStatus;
+        return Results.Json(new
+        {
+            sessionId = session.SessionId,
+            playerId = session.PlayerId,
+            file = lastStatus?.File ?? session.MediaPath,
+            state = "stopped",
+            positionMs = lastStatus?.PositionMs ?? 0,
+            durationMs = lastStatus?.DurationMs ?? 0,
+            endReason = session.EndReason,
+            endedAt = session.EndedAt,
+        });
     }
 }

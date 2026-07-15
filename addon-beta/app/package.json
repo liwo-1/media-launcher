@@ -1,13 +1,14 @@
 {
   "name": "media-launcher-app",
-  "version": "1.8.0-beta.1",
+  "version": "2.0.0-beta.1",
   "private": true,
-  "description": "Poster-grid frontend and backend for launching Plex media on paired playback targets",
+  "description": "Poster-grid frontend and backend for launching Plex or Jellyfin media on paired playback targets",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "lint": "node scripts/check-js.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:browser": "node --test test/browser-behavior.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

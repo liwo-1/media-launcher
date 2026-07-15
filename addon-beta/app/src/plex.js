@@ -1,20 +1,61 @@
 const { getStoredToken } = require('./token-store');
 const { readSettings } = require('./settings-store');
+const { joinServerPath, normalizeServerUrl } = require('./server-url');
 
-// A token set directly in add-on options wins; otherwise fall back to one obtained via the PIN
-// linking flow (src/plex-auth.js) and persisted to /data.
-let currentToken = process.env.PLEX_TOKEN || getStoredToken() || null;
+let runtimeCredential = null;
 
-function setToken(token) {
-  currentToken = token;
+// Kept for legacy tests and callers during the beta transition. Even an in-memory credential is
+// scoped to the exact configured Plex URL and cannot follow a later URL change.
+function setToken(token, serverUrl = getPlexUrl()) {
+  runtimeCredential = token
+    ? { token, serverUrl: normalizeServerUrl(serverUrl, { required: true, field: 'Plex server URL' }) }
+    : null;
 }
 
 function hasToken() {
-  return Boolean(currentToken);
+  const plexUrl = getPlexUrl();
+  return Boolean(plexUrl && tokenForUrl(plexUrl));
 }
 
 function getPlexUrl() {
   return process.env.PLEX_URL || readSettings().plexUrl || null;
+}
+
+function tokenForUrl(plexUrl) {
+  let normalizedUrl;
+  try {
+    normalizedUrl = normalizeServerUrl(plexUrl, { required: true, field: 'Plex server URL' });
+  } catch {
+    return null;
+  }
+  const environmentToken = typeof process.env.PLEX_TOKEN === 'string'
+    ? process.env.PLEX_TOKEN.trim()
+    : '';
+  const environmentUrl = typeof process.env.PLEX_URL === 'string'
+    ? process.env.PLEX_URL.trim()
+    : '';
+  if (environmentToken) {
+    if (!environmentUrl) return null;
+    try {
+      return normalizeServerUrl(environmentUrl, { required: true, field: 'Plex server URL' }) === normalizedUrl
+        ? environmentToken
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  if (runtimeCredential?.serverUrl === normalizedUrl) return runtimeCredential.token;
+  return getStoredToken(normalizedUrl);
+}
+
+function encodeKey(value, label = 'Plex item id') {
+  const key = value === undefined || value === null ? '' : String(value);
+  if (!key || key.length > 256 || /[\u0000-\u001f\u007f]/.test(key)) {
+    const err = new Error(`${label} is invalid.`);
+    err.status = 400;
+    throw err;
+  }
+  return encodeURIComponent(key);
 }
 
 async function plexFetch(path, { binary = false, parseJson = true } = {}) {
@@ -24,19 +65,25 @@ async function plexFetch(path, { binary = false, parseJson = true } = {}) {
     err.status = 400;
     throw err;
   }
-  if (!currentToken) {
+  const token = tokenForUrl(plexUrl);
+  if (!token) {
     const err = new Error('Plex account is not linked yet.');
     err.status = 401;
     throw err;
   }
-  const url = `${plexUrl}${path}`;
+  const url = joinServerPath(plexUrl, path);
   const response = await fetch(url, {
     headers: {
-      'X-Plex-Token': currentToken,
-      Accept: 'application/json',
+      'X-Plex-Token': token,
+      Accept: binary ? 'image/*' : 'application/json',
     },
+    redirect: 'manual',
+    signal: AbortSignal.timeout(binary ? 30000 : 15000),
   });
 
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error('Plex server URL returned a redirect; configure its final URL.');
+  }
   if (!response.ok) {
     throw new Error(`Plex request failed (${response.status}): ${path}`);
   }
@@ -66,17 +113,19 @@ async function getLibraryPaths() {
 }
 
 async function getItems(sectionKey) {
-  const data = await plexFetch(`/library/sections/${sectionKey}/all`);
+  const data = await plexFetch(`/library/sections/${encodeKey(sectionKey, 'Plex library id')}/all`);
   return data.MediaContainer.Metadata || [];
 }
 
 async function getRecentlyAdded(sectionKey) {
-  const data = await plexFetch(`/library/sections/${sectionKey}/recentlyAdded`);
+  const data = await plexFetch(
+    `/library/sections/${encodeKey(sectionKey, 'Plex library id')}/recentlyAdded`
+  );
   return data.MediaContainer.Metadata || [];
 }
 
 async function getChildren(ratingKey) {
-  const data = await plexFetch(`/library/metadata/${ratingKey}/children`);
+  const data = await plexFetch(`/library/metadata/${encodeKey(ratingKey)}/children`);
   return data.MediaContainer.Metadata || [];
 }
 
@@ -89,7 +138,7 @@ function getEpisodes(seasonRatingKey) {
 }
 
 async function getItemFull(ratingKey) {
-  const data = await plexFetch(`/library/metadata/${ratingKey}`);
+  const data = await plexFetch(`/library/metadata/${encodeKey(ratingKey)}`);
   return data.MediaContainer.Metadata[0];
 }
 
@@ -103,33 +152,34 @@ async function getOnDeck() {
 }
 
 async function getRelated(ratingKey) {
-  const data = await plexFetch(`/library/metadata/${ratingKey}/related`);
+  const data = await plexFetch(`/library/metadata/${encodeKey(ratingKey)}/related`);
   const hub = (data.MediaContainer.Hub || [])[0];
   return (hub && hub.Metadata) || [];
 }
 
 function markWatched(ratingKey) {
-  return plexFetch(
-    `/:/scrobble?key=${ratingKey}&identifier=com.plexapp.plugins.library`,
-    { parseJson: false }
-  );
+  const key = decodeURIComponent(encodeKey(ratingKey));
+  const params = new URLSearchParams({ key, identifier: 'com.plexapp.plugins.library' });
+  return plexFetch(`/:/scrobble?${params}`, { parseJson: false });
 }
 
 function markUnwatched(ratingKey) {
-  return plexFetch(
-    `/:/unscrobble?key=${ratingKey}&identifier=com.plexapp.plugins.library`,
-    { parseJson: false }
-  );
+  const key = decodeURIComponent(encodeKey(ratingKey));
+  const params = new URLSearchParams({ key, identifier: 'com.plexapp.plugins.library' });
+  return plexFetch(`/:/unscrobble?${params}`, { parseJson: false });
 }
 
 function scanLibrary(sectionKey) {
-  return plexFetch(`/library/sections/${sectionKey}/refresh`, { parseJson: false });
+  return plexFetch(`/library/sections/${encodeKey(sectionKey, 'Plex library id')}/refresh`, {
+    parseJson: false,
+  });
 }
 
 function reportTimeline(ratingKey, state, timeMs, durationMs) {
+  const key = decodeURIComponent(encodeKey(ratingKey));
   const params = new URLSearchParams({
-    ratingKey,
-    key: `/library/metadata/${ratingKey}`,
+    ratingKey: key,
+    key: `/library/metadata/${key}`,
     state, // 'playing' | 'paused' | 'stopped'
     time: String(timeMs),
     duration: String(durationMs),

@@ -24,22 +24,35 @@ function loadApp(directory) {
   };
 }
 
-const stable = loadApp('addon');
-const beta = loadApp('addon-beta');
+function checkCatalog({
+  stableDirectory = path.resolve('addon'),
+  betaDirectory = path.resolve('addon-beta'),
+  log = true,
+} = {}) {
+  const stable = loadApp(stableDirectory);
+  const beta = loadApp(betaDirectory);
 
-assert.equal(stable.name, 'Media Launcher');
-assert.equal(stable.slug, 'media_launcher');
-assert.equal(stable.hostPort, 8088);
+  assert.equal(stable.name, 'Media Launcher');
+  assert.equal(stable.slug, 'media_launcher');
+  assert.equal(stable.hostPort, 8088);
 
-assert.equal(beta.name, 'Media Launcher Beta');
-assert.equal(beta.slug, 'media_launcher_beta');
-assert.equal(beta.hostPort, 8089);
+  assert.equal(beta.name, 'Media Launcher Beta');
+  assert.equal(beta.slug, 'media_launcher_beta');
+  assert.equal(beta.hostPort, 8089);
 
-const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-assert.match(stable.version, versionPattern);
-assert.match(beta.version, versionPattern);
+  const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+  assert.match(stable.version, versionPattern);
+  assert.match(beta.version, versionPattern);
 
-assert.notEqual(stable.slug, beta.slug);
-assert.notEqual(stable.hostPort, beta.hostPort);
+  assert.notEqual(stable.slug, beta.slug);
+  assert.notEqual(stable.hostPort, beta.hostPort);
 
-console.log(`Catalogue checked: ${stable.name} ${stable.version}, ${beta.name} ${beta.version}`);
+  if (log) {
+    console.log(`Catalogue checked: ${stable.name} ${stable.version}, ${beta.name} ${beta.version}`);
+  }
+  return { stable, beta };
+}
+
+if (require.main === module) checkCatalog();
+
+module.exports = { checkCatalog, loadApp };

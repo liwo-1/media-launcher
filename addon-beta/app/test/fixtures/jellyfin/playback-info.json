@@ -1,0 +1,22 @@
+{
+  "PlaySessionId": "play_session_1",
+  "MediaSources": [
+    {
+      "Id": "http_source",
+      "Protocol": "Http",
+      "Path": "https://cdn.invalid/transcode.m3u8"
+    },
+    {
+      "Id": "source_movie",
+      "Protocol": "File",
+      "Path": "/srv/media/Movies/Example Film (2024)/Example Film.mkv",
+      "MediaStreams": [
+        {
+          "Type": "Video",
+          "Height": 1080,
+          "Codec": "h264"
+        }
+      ]
+    }
+  ]
+}

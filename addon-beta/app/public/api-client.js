@@ -5,15 +5,30 @@
 // against the current document instead, landing in the right place either way.
 const api = {
   _adminPinKey: 'media-launcher-admin-pin',
+  _adminPin: '',
+  _legacyAdminPinPurged: false,
   _pinPromptPromise: null,
 
   _getStoredAdminPin() {
-    return localStorage.getItem(api._adminPinKey) || '';
+    // Older beta builds persisted the raw PIN in localStorage. Remove that value once, then keep
+    // the PIN only for this page lifetime so another same-origin add-on cannot read it later.
+    if (!api._legacyAdminPinPurged) {
+      try { localStorage.removeItem(api._adminPinKey); } catch {}
+      api._legacyAdminPinPurged = true;
+    }
+    return api._adminPin;
   },
 
   _storeAdminPin(pin) {
-    if (pin) localStorage.setItem(api._adminPinKey, pin);
-    else localStorage.removeItem(api._adminPinKey);
+    api._adminPin = typeof pin === 'string' ? pin : '';
+    try { localStorage.removeItem(api._adminPinKey); } catch {}
+    api._legacyAdminPinPurged = true;
+  },
+
+  async _isAdminPinChallenge(response) {
+    if (response.status !== 401) return false;
+    const body = await response.clone().json().catch(() => ({}));
+    return body?.adminPinRequired === true;
   },
 
   async _requestAdminPin() {
@@ -78,7 +93,7 @@ const api = {
     if (pin) headers.set('X-Admin-Pin', pin);
     let response = await fetch(path, { ...options, headers });
 
-    if (response.status === 401 && allowPrompt) {
+    if (allowPrompt && await api._isAdminPinChallenge(response)) {
       api._storeAdminPin('');
       const entered = await api._requestAdminPin();
       if (!entered) return response;
@@ -88,50 +103,68 @@ const api = {
     }
     return response;
   },
-  async getLibraries() {
-    return api._get('api/libraries');
+  async getBootstrap(signal) {
+    return api._get('api/bootstrap', { signal });
   },
 
-  async getItems(parentId) {
-    const params = new URLSearchParams({ parentId });
-    return api._get(`api/items?${params}`);
+  async getLibraries(signal) {
+    return api._get('api/media/libraries', { signal });
   },
 
-  async getRecentlyAdded(libraryKey) {
-    return api._get(`api/libraries/${libraryKey}/recentlyAdded`);
+  async getLibraryItems(libraryId, signal) {
+    return api._get(`api/media/libraries/${encodeURIComponent(libraryId)}/items`, { signal });
   },
 
-  async getItem(itemId) {
-    return api._get(`api/items/${itemId}`);
+  async getRecentlyAdded(libraryId, signal) {
+    return api._get(
+      `api/media/libraries/${encodeURIComponent(libraryId)}/recently-added`,
+      { signal }
+    );
   },
 
-  async getSeasons(showId) {
-    return api._get(`api/shows/${showId}/seasons`);
+  async getContinueWatching(signal) {
+    return api._get('api/media/continue-watching', { signal });
   },
 
-  async getEpisodes(showId, seasonId) {
-    return api._get(`api/shows/${showId}/seasons/${seasonId}/episodes`);
+  async searchMedia(query, signal) {
+    const params = new URLSearchParams({ q: String(query || '') });
+    return api._get(`api/media/search?${params}`, { signal });
   },
 
-  async getOnDeck() {
-    return api._get('api/ondeck');
+  async getItem(itemId, signal) {
+    return api._get(`api/media/items/${encodeURIComponent(itemId)}`, { signal });
   },
 
-  async getRelated(itemId) {
-    return api._get(`api/items/${itemId}/related`);
+  async getRelated(itemId, signal) {
+    return api._get(`api/media/items/${encodeURIComponent(itemId)}/related`, { signal });
   },
 
-  imageUrl(relativePath) {
-    if (!relativePath) return '';
-    return `api/image?path=${encodeURIComponent(relativePath)}`;
+  async getSeasons(seriesId, signal) {
+    return api._get(`api/media/series/${encodeURIComponent(seriesId)}/seasons`, { signal });
   },
 
-  async getPlaybackTargets() {
-    return api._get('api/playback-targets');
+  async getEpisodes(seriesId, seasonId, signal) {
+    return api._get(
+      `api/media/series/${encodeURIComponent(seriesId)}/seasons/${encodeURIComponent(seasonId)}/episodes`,
+      { signal }
+    );
+  },
+
+  imageUrl(opaqueRef) {
+    if (!opaqueRef) return '';
+    return `api/media/images/${encodeURIComponent(opaqueRef)}`;
+  },
+
+  async getPlaybackTargets(signal) {
+    return api._get('api/playback-targets', { signal });
+  },
+
+  async getPlaybackSessions(signal) {
+    return api._get('api/playback-sessions', { signal });
   },
 
   async play(itemId, targetId = '') {
-    const response = await fetch(`api/play/${itemId}`, {
+    const response = await fetch(`api/play/${encodeURIComponent(itemId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(targetId ? { targetId } : {}),
@@ -143,28 +176,74 @@ const api = {
     return body;
   },
 
-  async markWatched(itemId) {
-    return api._post(`api/items/${itemId}/watched`);
+  async controlPlaybackSession(sessionId, { targetId, action, positionMs } = {}) {
+    if (typeof sessionId !== 'string' || !sessionId) {
+      throw new TypeError('Playback session id is required');
+    }
+    if (typeof targetId !== 'string' || !targetId) {
+      throw new TypeError('Playback target id is required');
+    }
+    if (!['pause', 'resume', 'seek', 'stop'].includes(action)) {
+      throw new TypeError('Unsupported playback control action');
+    }
+    const payload = { targetId, action };
+    if (action === 'seek') {
+      if (!Number.isSafeInteger(positionMs) || positionMs < 0) {
+        throw new TypeError('Seek position must be a non-negative integer');
+      }
+      payload.positionMs = positionMs;
+    }
+    return api._postJson(
+      `api/playback-sessions/${encodeURIComponent(sessionId)}/control`,
+      payload
+    );
   },
 
-  async markUnwatched(itemId) {
-    return api._post(`api/items/${itemId}/unwatched`);
+  async setWatched(itemId, watched) {
+    return api._postJson(
+      `api/media/items/${encodeURIComponent(itemId)}/watched`,
+      { watched: Boolean(watched) }
+    );
   },
 
-  async scanLibrary(libraryKey) {
-    return api._post(`api/libraries/${libraryKey}/scan`);
+  async scanLibrary(libraryId) {
+    return api._post(`api/media/libraries/${encodeURIComponent(libraryId)}/scan`);
   },
 
   async requestPlexPin() {
-    return api._postAdmin('api/plex-auth/pin');
+    const pin = await api._postAdmin('api/plex-auth/pin');
+    // The legacy Settings view interpolates this value into its fixed Plex instructions. Keep the
+    // browser destination constant rather than trusting a response-provided URL.
+    return { ...pin, linkUrl: 'https://plex.tv/link' };
   },
 
   async checkPlexPin(id) {
-    return api._getAdmin(`api/plex-auth/pin/${id}`);
+    return api._getAdmin(`api/plex-auth/pin/${encodeURIComponent(id)}`);
   },
 
   async unlinkPlex() {
     return api._postAdmin('api/plex-auth/unlink');
+  },
+
+  async loginJellyfin({ serverUrl, username, password }) {
+    // Settings was already unlocked by getSettings(). Do not treat Jellyfin's own 401 response as
+    // an admin-PIN challenge and resend a user's password after another prompt.
+    const response = await api._adminFetch('api/jellyfin-auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serverUrl, username, password }),
+    }, false);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+    return body;
+  },
+
+  async commitJellyfinLogin(linkId) {
+    return api._postAdminJson('api/jellyfin-auth/login/commit', { linkId });
+  },
+
+  async unlinkJellyfin() {
+    return api._postAdmin('api/jellyfin-auth/unlink');
   },
 
   async getSettings() {
@@ -173,6 +252,10 @@ const api = {
 
   async getPlexLibraryPaths() {
     return api._getAdmin('api/settings/plex-libraries');
+  },
+
+  async getMediaServerLibraryPaths() {
+    return api._getAdmin('api/settings/media-server/library-paths');
   },
 
   async pairPlayerAgent() {
@@ -217,8 +300,21 @@ const api = {
     return body;
   },
 
-  async _get(path) {
-    const response = await fetch(path);
+  async _postJson(path, value) {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body.error || `Request failed (${response.status})`);
+    }
+    return body;
+  },
+
+  async _get(path, options = {}) {
+    const response = await fetch(path, options);
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(body.error || `Request failed (${response.status})`);
@@ -233,6 +329,17 @@ const api = {
     return body;
   },
 
+  async _postAdminJson(path, value) {
+    const response = await api._adminFetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+    return body;
+  },
+
   async _getAdmin(path) {
     const response = await api._adminFetch(path);
     const body = await response.json().catch(() => ({}));
@@ -240,3 +347,6 @@ const api = {
     return body;
   },
 };
+
+// Run the one-time migration even when normal startup never opens PIN-protected Settings.
+api._getStoredAdminPin();

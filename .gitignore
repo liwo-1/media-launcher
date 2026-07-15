@@ -2,7 +2,20 @@ node_modules/
 .env
 *.log
 addon/app/local-data/
+addon-beta/app/local-data/
 
 # .NET build artifacts for player-agent-app
 player-agent-app/bin/
 player-agent-app/obj/
+player-agent-app/tests/bin/
+player-agent-app/tests/obj/
+release-tests/**/bin/
+release-tests/**/obj/
+agent-core/bin/
+agent-core/obj/
+linux-agent/bin/
+linux-agent/obj/
+agent-core-tests/bin/
+agent-core-tests/obj/
+linux-agent-tests/bin/
+linux-agent-tests/obj/

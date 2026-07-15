@@ -96,29 +96,35 @@ public sealed class CustomPlayerForm : Form
             try
             {
                 var name = _nameBox.Text.Trim();
-                if (string.IsNullOrWhiteSpace(name) || name.Length > 80)
-                    throw new ArgumentException("Enter a player name of 1 to 80 characters.");
                 var executable = _executableBox.Text.Trim();
-                CommandPlayerAdapter.ValidateExecutable(executable);
                 var workingDirectory = _workingDirectoryBox.Text.Trim();
-                if (workingDirectory.Length > 0 &&
-                    (!Path.IsPathFullyQualified(workingDirectory) || !Directory.Exists(workingDirectory)))
-                    throw new ArgumentException("The working directory does not exist.");
                 var arguments = _argumentsBox.Lines
                     .Select(line => line.Trim())
                     .Where(line => line.Length > 0)
                     .ToArray();
-                if (arguments.Length > 100 || arguments.Any(argument => argument.Length > 1000))
-                    throw new ArgumentException("Custom arguments exceed the supported size.");
-
-                Profile = new CustomPlayerProfile
+                var candidate = new CustomPlayerProfile
                 {
                     Id = _profileId,
                     Name = name,
-                    ExecutablePath = Path.GetFullPath(executable),
-                    WorkingDirectory = workingDirectory.Length > 0 ? Path.GetFullPath(workingDirectory) : null,
+                    ExecutablePath = executable,
+                    WorkingDirectory = workingDirectory.Length > 0 ? workingDirectory : null,
                     Arguments = arguments,
                 };
+                var validation = CustomPlayerProfileValidator.Validate(candidate, requireExistingPaths: true);
+                if (!validation.IsValid)
+                {
+                    throw new ArgumentException(string.Join(
+                        Environment.NewLine,
+                        validation.Diagnostics
+                            .Where(diagnostic => diagnostic.Severity == "error")
+                            .Select(diagnostic => diagnostic.Message)));
+                }
+
+                candidate.ExecutablePath = Path.GetFullPath(executable);
+                candidate.WorkingDirectory = workingDirectory.Length > 0
+                    ? Path.GetFullPath(workingDirectory)
+                    : null;
+                Profile = candidate;
                 DialogResult = DialogResult.OK;
                 Close();
             }

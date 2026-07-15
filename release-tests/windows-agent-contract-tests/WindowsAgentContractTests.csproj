@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../agent-core/MediaLauncher.Agent.Core.csproj" />
+    <ProjectReference Include="../../player-agent-app/PlayerAgent.csproj" />
+    <None Include="../../protocol/fixtures/*.json"
+          Link="fixtures/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

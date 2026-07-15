@@ -104,7 +104,7 @@ public static class PairingClient
         await PairingState.MutationLock.WaitAsync(cancellationToken);
         try
         {
-            var registrationCredential = EnsureRegistrationCredential(config);
+            var registrationCredential = config.EnsureRegistrationCredential();
             var baseUri = new Uri(config.HomeAssistantUrl.TrimEnd('/') + "/");
             var endpoint = new Uri(baseUri, "api/player-agent/register");
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
@@ -113,8 +113,8 @@ public static class PairingClient
                 Content = JsonContent.Create(new
                 {
                     product = Product,
-                    protocolVersion = 1,
-                    supportedProtocolVersions = new[] { 1, 2 },
+                    protocolVersion = AgentProtocol.LegacyVersion,
+                    supportedProtocolVersions = AgentProtocol.SupportedVersions,
                     instanceId = config.InstanceId,
                     port = config.Port,
                     agentVersion = AgentIdentity.Version,
@@ -150,10 +150,10 @@ public static class PairingClient
                 return new RegistrationAttempt(RegistrationState.Retry, retry);
             }
 
-            var body = await response.Content.ReadFromJsonAsync<RegistrationResponse>(
+            var body = await response.Content.ReadFromJsonAsync<AgentRegistrationResponse>(
                 cancellationToken: cancellationToken);
             var secret = body?.Secret?.Trim().ToLowerInvariant();
-            if (secret is null || secret.Length != 48 || secret.Any(c => !Uri.IsHexDigit(c)))
+            if (!BearerAuthentication.IsPairingSecret(secret))
                 throw new InvalidDataException("The add-on returned an invalid pairing secret.");
 
             if (!string.Equals(config.SharedSecret, secret, StringComparison.Ordinal) ||
@@ -161,7 +161,7 @@ public static class PairingClient
             {
                 var previousSharedSecret = config.SharedSecret;
                 var previousRegistrationSecret = config.RegistrationSecret;
-                config.SharedSecret = secret;
+                config.SharedSecret = secret!;
                 config.RegistrationSecret = "";
                 try
                 {
@@ -187,26 +187,6 @@ public static class PairingClient
         }
     }
 
-    private static string EnsureRegistrationCredential(AppConfig config)
-    {
-        if (!string.IsNullOrEmpty(config.SharedSecret)) return config.SharedSecret;
-        if (!string.IsNullOrEmpty(config.RegistrationSecret)) return config.RegistrationSecret;
-
-        var credential = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-        var previous = config.RegistrationSecret;
-        config.RegistrationSecret = credential;
-        try
-        {
-            config.Save();
-            return credential;
-        }
-        catch
-        {
-            config.RegistrationSecret = previous;
-            throw;
-        }
-    }
-
     private static async Task<string> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
@@ -222,12 +202,6 @@ public static class PairingClient
         {
             return response.ReasonPhrase ?? "request failed";
         }
-    }
-
-    private sealed class RegistrationResponse
-    {
-        public string? Secret { get; set; }
-        public int? RegistrationRefreshSeconds { get; set; }
     }
 
     private sealed record RegistrationAttempt(RegistrationState State, TimeSpan NextAttempt);

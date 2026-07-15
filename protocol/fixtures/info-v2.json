@@ -1,0 +1,35 @@
+{
+  "agent": {
+    "instanceId": "22222222222222222222222222222222",
+    "displayName": "Fixture Player",
+    "version": "1.5.0-beta.1",
+    "platform": "windows",
+    "architecture": "x64"
+  },
+  "capabilities": [
+    "players.list",
+    "sessions.create",
+    "sessions.status",
+    "sessions.control",
+    "sessions.end-reasons"
+  ],
+  "acceptedPathKinds": ["windows-unc"],
+  "maxConcurrentSessions": 1,
+  "defaultPlayerId": "mpc-hc",
+  "players": [
+    {
+      "id": "mpc-hc",
+      "kind": "mpc-hc",
+      "name": "MPC-HC",
+      "available": true,
+      "capabilities": [
+        "play.file",
+        "fullscreen",
+        "status.state",
+        "status.position",
+        "status.duration",
+        "control.stop"
+      ]
+    }
+  ]
+}

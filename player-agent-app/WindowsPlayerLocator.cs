@@ -100,7 +100,7 @@ public static class WindowsPlayerLocator
         catch { return false; }
     }
 
-    private static string? FindOnPath(string executableName)
+    internal static string? FindOnPath(string executableName)
     {
         foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "")
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -108,7 +108,7 @@ public static class WindowsPlayerLocator
             try
             {
                 var candidate = Path.Combine(directory, executableName);
-                if (File.Exists(candidate)) return candidate;
+                if (File.Exists(candidate)) return Path.GetFullPath(candidate);
             }
             catch { /* Ignore malformed PATH entries. */ }
         }

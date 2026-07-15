@@ -1,0 +1,65 @@
+{
+  "MediaContainer": {
+    "Metadata": [
+      {
+        "ratingKey": "100",
+        "type": "movie",
+        "title": "Example Film",
+        "year": 2024,
+        "summary": "A fixture movie used by provider contract tests.",
+        "contentRating": "PG",
+        "duration": 7200000,
+        "viewOffset": 120000,
+        "viewCount": 1,
+        "thumb": "/library/metadata/100/thumb/1700000000",
+        "art": "/library/metadata/100/art/1700000000",
+        "addedAt": 1700000000,
+        "rating": 7.5,
+        "audienceRating": 8.1,
+        "Genre": [
+          { "tag": "Drama" },
+          { "tag": "Adventure" }
+        ],
+        "Director": [
+          { "tag": "Alex Example" }
+        ],
+        "Role": [
+          {
+            "tag": "Taylor Example",
+            "role": "Sam",
+            "thumb": "/library/people/10/thumb/1700000000"
+          }
+        ],
+        "Media": [
+          {
+            "duration": 7200000,
+            "videoResolution": "1080",
+            "videoCodec": "h264",
+            "Part": [
+              {
+                "file": "/srv/media/Movies/Example Film (2024)/Example Film.mkv",
+                "Stream": [
+                  {
+                    "streamType": 2,
+                    "language": "English",
+                    "codec": "aac",
+                    "channels": 6
+                  },
+                  {
+                    "streamType": 3,
+                    "language": "Danish",
+                    "codec": "srt",
+                    "forced": 1
+                  }
+                ]
+              },
+              {
+                "file": "/srv/archive/Movies/Example Film alternate.mkv"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "paired": true,
+  "secret": "000000000000000000000000000000000000000000000001",
+  "playerAgentUrl": "http://192.0.2.10:7777",
+  "protocolVersion": 1,
+  "selectedProtocolVersion": 1,
+  "registrationRefreshSeconds": 300
+}

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "candidateVersion": "REPLACE_WITH_BETA_VERSION",
+  "candidateCommit": "REPLACE_WITH_40_CHARACTER_LOWERCASE_GIT_COMMIT",
+  "targetVersion": "REPLACE_WITH_STABLE_VERSION",
+  "artifacts": {
+    "windows": {
+      "version": "REPLACE_WITH_WINDOWS_AGENT_VERSION",
+      "assets": ["REPLACE_WITH_WINDOWS_X64_ASSET"]
+    },
+    "linux": {
+      "version": "REPLACE_WITH_LINUX_AGENT_VERSION",
+      "assets": [
+        "REPLACE_WITH_LINUX_X64_ASSET",
+        "REPLACE_WITH_LINUX_ARM64_ASSET"
+      ]
+    }
+  },
+  "checks": {
+    "homeAssistant": {
+      "passed": false,
+      "testedBy": "",
+      "testedAt": "",
+      "notes": "Fresh-install and upgrade the beta catalogue entry from main; recover Settings; with two paired agents and multiple players verify default/ask target selection; browse artwork and launch real Plex and Jellyfin movies and episodes."
+    },
+    "windows": {
+      "passed": false,
+      "testedBy": "",
+      "testedAt": "",
+      "notes": "Install and upgrade the exact published Windows asset; pair, reset, and re-pair; discover MPC-HC, VLC, PotPlayer, and a custom profile where available; launch real media through every available player and verify replacement/ownership; with MPC-HC verify resume/progress and auto-advance; with VLC verify status/progress, pause/resume, seek, stop, and the explicit end reason."
+    },
+    "linux": {
+      "passed": false,
+      "testedBy": "",
+      "testedAt": "",
+      "notes": "Install and upgrade the exact x64 and arm64 archives where hardware is available; verify the systemd user service restarts and pairs; launch through mpv and VLC/MPRIS; verify status/controls and allowed-root and symlink rejection."
+    }
+  }
+}

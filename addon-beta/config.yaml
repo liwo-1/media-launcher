@@ -1,7 +1,7 @@
 name: Media Launcher Beta
-version: "1.8.0-beta.1"
+version: "2.0.0-beta.1"
 slug: media_launcher_beta
-description: BETA - test multi-device playback, player selection, and prerelease Media Launcher features
+description: BETA - test Plex or Jellyfin browsing with multi-device playback
 arch:
   - amd64
 startup: application

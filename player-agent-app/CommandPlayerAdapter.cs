@@ -10,7 +10,7 @@ public sealed class CommandPlayerAdapter(
     IReadOnlyList<string> argumentTemplates,
     string? workingDirectory = null,
     string? fullscreenArgument = null,
-    bool terminateExistingInstances = false) : IPlayerAdapter
+    bool requireExclusiveInstance = false) : IPlayerAdapter
 {
     private static readonly HashSet<string> BlockedExecutables = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -29,7 +29,8 @@ public sealed class CommandPlayerAdapter(
     {
         MediaPathValidator.ValidateWindowsPath(request.MediaPath, allowedMediaRoots);
         ValidateExecutable(executablePath);
-        if (terminateExistingInstances) await TerminateExistingInstancesAsync();
+        if (requireExclusiveInstance)
+            ProcessOwnershipGuard.ThrowIfProcessNameIsRunning(executablePath, Descriptor.DisplayName);
 
         var startInfo = new ProcessStartInfo
         {
@@ -148,37 +149,4 @@ public sealed class CommandPlayerAdapter(
             _ => match.Value,
         });
 
-    private async Task TerminateExistingInstancesAsync()
-    {
-        var processName = Path.GetFileNameWithoutExtension(executablePath);
-        var existing = Process.GetProcessesByName(processName);
-        try
-        {
-            foreach (var process in existing)
-            {
-                if (process.HasExited) continue;
-                process.Kill(entireProcessTree: true);
-            }
-
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            foreach (var process in existing)
-            {
-                if (!process.HasExited) await process.WaitForExitAsync(timeout.Token);
-            }
-        }
-        catch (OperationCanceledException ex)
-        {
-            throw new InvalidOperationException(
-                $"Timed out while stopping the existing {Descriptor.DisplayName} process before playback.", ex);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"Could not stop the existing {Descriptor.DisplayName} process before playback.", ex);
-        }
-        finally
-        {
-            foreach (var process in existing) process.Dispose();
-        }
-    }
 }

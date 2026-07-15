@@ -1,0 +1,27 @@
+{
+  "MediaContainer": {
+    "Hub": [
+      {
+        "title": "Related Movies",
+        "Metadata": [
+          {
+            "ratingKey": "101",
+            "type": "movie",
+            "title": "Related Film",
+            "thumb": "/library/metadata/101/thumb/1700000000"
+          }
+        ]
+      },
+      {
+        "title": "Actors",
+        "Metadata": [
+          {
+            "ratingKey": "999",
+            "type": "movie",
+            "title": "Ignored second hub"
+          }
+        ]
+      }
+    ]
+  }
+}

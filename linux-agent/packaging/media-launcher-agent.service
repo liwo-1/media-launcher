@@ -1,0 +1,28 @@
+[Unit]
+Description=Media Launcher Linux Player Agent
+Documentation=https://github.com/liwo-1/media-launcher
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/lib/media-launcher-agent/media-launcher-linux-agent run
+Restart=on-failure
+RestartSec=5
+UMask=0077
+Environment=XDG_RUNTIME_DIR=%t
+Environment=XDG_CONFIG_HOME=%E
+Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=%t/media-launcher-agent/dotnet
+RuntimeDirectory=media-launcher-agent
+RuntimeDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%E %t/media-launcher-agent
+ReadWritePaths=-%h/.cache -%h/.local/share -%h/.local/state -%h/.var -%h/snap
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=default.target

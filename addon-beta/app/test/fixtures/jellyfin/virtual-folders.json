@@ -1,0 +1,27 @@
+[
+  {
+    "ItemId": "lib_movies",
+    "Name": "Movies",
+    "CollectionType": "movies",
+    "Locations": [
+      "/srv/media/Movies",
+      "/srv/archive/Movies"
+    ]
+  },
+  {
+    "ItemId": "lib_tv",
+    "Name": "Television",
+    "CollectionType": "tvshows",
+    "Locations": [
+      "/srv/media/Television"
+    ]
+  },
+  {
+    "ItemId": "lib_music",
+    "Name": "Music",
+    "CollectionType": "music",
+    "Locations": [
+      "/srv/media/Music"
+    ]
+  }
+]

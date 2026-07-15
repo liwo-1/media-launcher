@@ -11,38 +11,36 @@ public static class PlayerCatalog
         if (MpcLocator.TryFind(config.MpcPathOverride, out _))
             players.Add(new MpcPlayerAdapter(config.MpcPathOverride).Descriptor);
 
-        if (WindowsPlayerLocator.FindVlc(config.VlcPathOverride) is not null)
-        {
-            players.Add(new PlayerDescriptor(
-                VlcPlayerId,
-                "vlc",
-                "VLC media player",
-                "detected",
-                true,
-                ["play.file", "fullscreen"]));
-        }
+        var vlcPath = WindowsPlayerLocator.FindVlc(config.VlcPathOverride);
+        if (vlcPath is not null) players.Add(new VlcPlayerAdapter(vlcPath).Descriptor);
 
         if (WindowsPlayerLocator.FindPotPlayer(config.PotPlayerPathOverride) is not null)
-        {
-            players.Add(new PlayerDescriptor(
-                PotPlayerId,
-                "potplayer",
-                "PotPlayer",
-                "detected",
-                true,
-                ["play.file"]));
-        }
+            players.Add(CreatePotPlayerDescriptor());
 
-        foreach (var profile in config.CustomPlayers ?? [])
+        foreach (var group in (config.CustomPlayers ?? []).GroupBy(
+                     profile => profile.Id ?? "",
+                     StringComparer.OrdinalIgnoreCase))
         {
-            if (!IsValidProfile(profile, requireExistingExecutable: false)) continue;
+            var profile = group.First();
+            var validation = CustomPlayerProfileValidator.Validate(profile, requireExistingPaths: true);
+            var diagnostics = validation.Diagnostics.ToList();
+            if (group.Count() > 1)
+            {
+                diagnostics.Add(new PlayerDiagnostic(
+                    "custom.duplicate_id",
+                    "error",
+                    "More than one local custom profile uses this ID. Edit or remove the duplicate profiles."));
+            }
             players.Add(new PlayerDescriptor(
                 profile.Id,
                 "custom",
                 profile.Name,
                 "custom",
-                File.Exists(profile.ExecutablePath),
-                ["play.file"]));
+                validation.IsValid && group.Count() == 1,
+                [PlayerCapabilities.PlayFile])
+            {
+                Diagnostics = [.. diagnostics],
+            });
         }
         return players;
     }
@@ -63,11 +61,7 @@ public static class PlayerCatalog
         {
             var path = WindowsPlayerLocator.FindVlc(config.VlcPathOverride) ??
                 throw new FileNotFoundException("VLC is no longer installed at the detected location.");
-            return new CommandPlayerAdapter(
-                GetDescriptors(config).Single(player => player.Id == VlcPlayerId),
-                path,
-                ["--no-one-instance", "--play-and-exit", "--start-time={start_seconds}", "{media_path}"],
-                fullscreenArgument: "--fullscreen");
+            return new VlcPlayerAdapter(path);
         }
 
         if (string.Equals(selected, PotPlayerId, StringComparison.OrdinalIgnoreCase))
@@ -75,18 +69,36 @@ public static class PlayerCatalog
             var path = WindowsPlayerLocator.FindPotPlayer(config.PotPlayerPathOverride) ??
                 throw new FileNotFoundException("PotPlayer is no longer installed at the detected location.");
             return new CommandPlayerAdapter(
-                GetDescriptors(config).Single(player => player.Id == PotPlayerId),
+                CreatePotPlayerDescriptor(),
                 path,
                 ["{media_path}"],
-                terminateExistingInstances: true);
+                requireExclusiveInstance: true);
         }
 
-        var custom = (config.CustomPlayers ?? []).SingleOrDefault(
-            profile => string.Equals(profile.Id, selected, StringComparison.OrdinalIgnoreCase));
-        if (custom is null || !IsValidProfile(custom, requireExistingExecutable: true))
+        var matchingCustomProfiles = (config.CustomPlayers ?? []).Where(
+            profile => string.Equals(profile.Id, selected, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (matchingCustomProfiles.Length != 1)
             throw new ArgumentException($"Unknown or unavailable player profile '{selected}'.");
+        var custom = matchingCustomProfiles[0];
+        var validation = CustomPlayerProfileValidator.Validate(custom, requireExistingPaths: true);
+        if (!validation.IsValid)
+        {
+            var detail = string.Join(" ", validation.Diagnostics
+                .Where(diagnostic => diagnostic.Severity == "error")
+                .Select(diagnostic => diagnostic.Message));
+            throw new ArgumentException($"Custom player profile '{custom.Name}' is unavailable. {detail}");
+        }
         return new CommandPlayerAdapter(
-            new PlayerDescriptor(custom.Id, "custom", custom.Name, "custom", true, ["play.file"]),
+            new PlayerDescriptor(
+                custom.Id,
+                "custom",
+                custom.Name,
+                "custom",
+                true,
+                [PlayerCapabilities.PlayFile])
+            {
+                Diagnostics = validation.Diagnostics,
+            },
             custom.ExecutablePath,
             custom.Arguments ?? [],
             custom.WorkingDirectory);
@@ -94,15 +106,27 @@ public static class PlayerCatalog
 
     public static string? GetDefaultPlayerId(AppConfig config) =>
         GetDescriptors(config).FirstOrDefault(
-            player => player.Available && player.Capabilities.Contains("play.file"))?.Id;
+            player => player.Available && PlayerCapabilities.Supports(player, PlayerCapabilities.PlayFile))?.Id;
 
     public static bool IsValidProfile(CustomPlayerProfile profile, bool requireExistingExecutable)
+        => CustomPlayerProfileValidator.Validate(profile, requireExistingExecutable).IsValid;
+
+    internal static PlayerDescriptor CreatePotPlayerDescriptor() => new(
+        PotPlayerId,
+        "potplayer",
+        "PotPlayer",
+        "detected",
+        true,
+        [PlayerCapabilities.PlayFile, PlayerCapabilities.ControlStop])
     {
-        if (!System.Text.RegularExpressions.Regex.IsMatch(profile.Id ?? "", "^custom-[a-f0-9]{32}$")) return false;
-        if (string.IsNullOrWhiteSpace(profile.Name) || profile.Name.Length > 80) return false;
-        if (!Path.IsPathFullyQualified(profile.ExecutablePath)) return false;
-        if (requireExistingExecutable && !File.Exists(profile.ExecutablePath)) return false;
-        if ((profile.Arguments ?? []).Any(argument => argument is null || argument.Contains('\0'))) return false;
-        return true;
-    }
+        // PotPlayer has no documented, authenticated status surface that is stable enough for this
+        // protocol. Process lifetime cannot distinguish playing, paused, seeking, or a different file.
+        Diagnostics =
+        [
+            new PlayerDiagnostic(
+                "potplayer.status_unsupported",
+                "info",
+                "PotPlayer is launch-and-stop only because no reliable supported status interface is available."),
+        ],
+    };
 }

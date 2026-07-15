@@ -11,12 +11,20 @@ function getRules(agent) {
 function resolveMediaPath(sourcePath, agent) {
   const rules = getRules(agent);
   for (const { from, to } of rules) {
-    const normalizedFrom = from.endsWith('/') ? from.slice(0, -1) : from;
+    const normalizedSource = String(sourcePath).replace(/\\/g, '/');
+    const normalizedFrom = String(from).replace(/\\/g, '/').replace(/\/+$/, '');
+    const windowsStyleSource = /^[a-z]:[\\/]/i.test(String(from)) ||
+      String(from).startsWith('\\\\');
+    const comparableSource = windowsStyleSource ? normalizedSource.toLowerCase() : normalizedSource;
+    const comparableFrom = windowsStyleSource ? normalizedFrom.toLowerCase() : normalizedFrom;
     const isBoundaryMatch =
-      sourcePath === normalizedFrom ||
-      (sourcePath.startsWith(normalizedFrom) && sourcePath.charAt(normalizedFrom.length) === '/');
+      comparableSource === comparableFrom ||
+      (comparableSource.startsWith(comparableFrom) &&
+        comparableSource.charAt(comparableFrom.length) === '/');
     if (normalizedFrom && isBoundaryMatch) {
-      const mapped = to + sourcePath.slice(normalizedFrom.length);
+      const normalizedTo = String(to).replace(/[\\/]+$/, '');
+      if (!normalizedTo) continue;
+      const mapped = normalizedTo + normalizedSource.slice(normalizedFrom.length);
       return agent?.platform === 'linux'
         ? mapped.replace(/\\/g, '/')
         : mapped.replace(/\//g, '\\');
@@ -25,7 +33,7 @@ function resolveMediaPath(sourcePath, agent) {
   throw new Error(
     rules.length === 0
       ? `No path mappings are configured for ${agent?.name || 'this player'} yet - set them on the Settings page.`
-      : `No path mapping rule matches: ${sourcePath}`
+      : 'No path mapping rule matches this media server path - update it on the Settings page.'
   );
 }
 

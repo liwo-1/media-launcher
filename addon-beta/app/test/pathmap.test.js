@@ -56,3 +56,34 @@ test('preserves forward slashes for a Linux playback target', () => {
   };
   assert.equal(resolveMediaPath('/volume1/video/Film/movie.mkv', agent), '/mnt/media/Film/movie.mkv');
 });
+
+test('maps Windows-style provider paths without weakening root boundaries', () => {
+  const agent = {
+    platform: 'windows',
+    pathMap: [{ from: 'D:\\Media\\Movies\\', to: '\\\\nas\\Movies\\' }],
+  };
+
+  assert.equal(
+    resolveMediaPath('d:\\media\\movies\\Example.mkv', agent),
+    '\\\\nas\\Movies\\Example.mkv'
+  );
+  assert.throws(
+    () => resolveMediaPath('D:\\Media\\Movies-Other\\Example.mkv', agent),
+    /No path mapping rule matches/
+  );
+});
+
+test('does not expose a provider source path when no mapping matches', () => {
+  const sourcePath = '/private/library/Household/Example.mkv';
+  const agent = {
+    name: 'Living Room',
+    platform: 'windows',
+    pathMap: [{ from: '/media', to: '\\\\nas\\Media' }],
+  };
+
+  assert.throws(
+    () => resolveMediaPath(sourcePath, agent),
+    (error) => /No path mapping rule matches/.test(error.message) &&
+      !error.message.includes(sourcePath) && !error.message.includes('/private/library')
+  );
+});

@@ -8,10 +8,9 @@ Work top to bottom within a phase; phases are ordered by dependency (see "Notes 
 for why). Items within the same phase are independent and can be done in any order. Check items
 off in the same commit that implements them, with a date.
 
-**This file is gitignored on purpose** until Phase 3 is fully checked off — it currently
-documents an unpatched Plex-token-exfiltration path and an unauthenticated arbitrary-path MPC-HC
-launch endpoint, and committing that publicly before they're fixed isn't worth the zero benefit.
-Once Phase 3 is done, un-gitignore and commit it.
+This is the historical hardening plan. The security phases below are complete and the document is
+tracked so the reasoning, verification notes, and remaining real-device acceptance check stay
+visible to maintainers.
 
 ## Phase 0 — Quick wins (do anytime, good session warm-ups)
 
@@ -94,8 +93,8 @@ Once Phase 3 is done, un-gitignore and commit it.
   > Applied as `app.use('/api/settings', requireAdminPin, settingsRoutes)` and
   > `app.use('/api/plex-auth', requireAdminPin, plexAuthRoutes)`. First PIN-setting call needs no
   > PIN (none configured yet); every call after must present the correct one, including changing
-  > the PIN itself. Frontend: Settings page JS caches the entered PIN in `localStorage` after
-  > first success — same mental model as a garage keypad code, not a login screen.
+  > the PIN itself. Frontend: Settings page JS keeps the entered PIN only in page memory after
+  > first success and eagerly removes the plaintext `localStorage` value used by older beta builds.
 
 ## Phase 3d — Defense-in-depth URL scheme validation (quick, pairs with 3b/3c)
 

@@ -1,0 +1,22 @@
+{
+  "Items": [
+    {
+      "Id": "movie_1",
+      "Type": "Movie",
+      "Name": "Example Film"
+    },
+    {
+      "Id": "series_1",
+      "Type": "Series",
+      "Name": "Example Series"
+    },
+    {
+      "Id": "episode_1",
+      "Type": "Episode",
+      "Name": "First",
+      "SeriesId": "series_1",
+      "SeasonId": "season_1",
+      "IndexNumber": 1
+    }
+  ]
+}

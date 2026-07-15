@@ -1,5 +1,67 @@
 # Changelog
 
+## 2.0.0-beta.1 — 2026-07-15
+
+- Added authenticated, capability-gated pause, resume, absolute seek, and stop controls to the
+  Home Assistant UI and the canonical protocol-v2 session-control endpoint.
+- Added a dedicated Windows VLC integration with a random per-session password, numeric
+  loopback-only HTTP control, status/progress reporting, idempotent pause/resume, seek, and graceful
+  stop. PotPlayer remains explicitly launch-and-stop only because it has no documented reliable
+  authenticated status interface.
+- Centralized Windows custom-profile validation and surfaced actionable local diagnostics for
+  invalid executables, working directories, argument templates, and duplicate IDs.
+- Extracted bearer authentication, capability names, protocol DTOs, media-path policy, player
+  contracts, and bounded request deduplication into a platform-neutral .NET core shared by both
+  agents.
+- Added a self-contained Linux user-session agent with directed silent pairing, per-device allowed
+  roots, native executable and desktop-entry discovery, Flatpak/Snap profiles, safe custom launch
+  profiles, and systemd user-service packaging.
+- Added full mpv control through a private Unix socket plus VLC and generic MPRIS control through
+  `playerctl`; launch-only fallbacks advertise only the capabilities they actually implement.
+- Added Linux-aware path mapping in the Home Assistant app, including canonical symlink resolution
+  and allowed-root enforcement in the Linux agent.
+- Added deterministic browser behavior tests for target choice, multi-target controls, accessible
+  season navigation, and Settings/provider recovery, plus backend control-bridge tests.
+- Kept the optional admin PIN only in page memory, rate-limited incorrect attempts, and stopped
+  unrelated provider 401 responses from triggering the PIN prompt. Plex tokens are now bound to
+  one exact server URL; links created by an older unscoped beta build require a one-time relink.
+- Finalized provider progress on explicit stop, replacement, and natural exit, retained ended-agent
+  status long enough for the add-on to observe it, and reconciled browser controls across player
+  switches and automatic next-episode sessions.
+- Bounded Windows agent logs, added MPC-HC resume-position launch support, and hardened Windows and
+  Linux process ownership so failed termination cannot silently orphan an unmanaged player.
+- Expanded CI and the immutable prerelease workflow to test the shared core and both agents,
+  validate Windows and Linux self-contained binaries, and publish versioned Windows x64, Linux x64,
+  and Linux arm64 assets under one SHA-256 manifest.
+- Added a fail-closed manual acceptance record and deterministic beta-to-stable promotion gate.
+- Updated the beta Home Assistant app to `2.0.0-beta.1`, the Windows agent to `1.5.0-beta.1`, and
+  introduced the Linux agent at `0.1.0-beta.1`.
+
+## 1.9.0-beta.1 — 2026-07-15
+
+- Added a provider-neutral media model and browser API so Plex-specific response fields no longer
+  leak into the frontend or playback-target protocol.
+- Added Jellyfin 10.10.7+ sign-in, movie/series libraries, paginated browsing, search, artwork,
+  related items, recently added, and continue watching.
+- Added Jellyfin direct-file playback resolution, resume positions, watched toggles, progress
+  reporting, and same-season automatic next-episode playback.
+- Added a Media Server selector to Settings with separate Plex and Jellyfin linking flows. Jellyfin
+  passwords are used only for sign-in and only its scoped user token is persisted.
+- Kept all source file paths and provider credentials on the add-on backend. Browser artwork uses
+  bounded provider-qualified opaque references and rejects redirects and non-image responses.
+- Removed admin-PIN prompts from ordinary startup by adding a credential-free public readiness
+  endpoint; Settings and both account-linking flows remain PIN-protected when a PIN is enabled.
+- Added provider contract fixtures, route/security tests, URL validation, large-library pagination,
+  bounded artwork streaming, unlink-time monitor revocation, stale-navigation cancellation, safer
+  DOM rendering, and accessible search/detail controls.
+- Added shared Windows/Linux protocol fixtures, a dependency-free Windows agent contract harness,
+  and CI validation of the actual self-contained Windows, Linux x64, and Linux arm64 publish output.
+- Added an immutable prerelease workflow that publishes the Windows executable and deterministic
+  Linux service archives with one generated SHA-256 manifest and a fail-closed manual acceptance
+  record, plus a deterministic beta-to-stable promotion command guarded by that record.
+- Updated the beta Home Assistant app to `1.9.0-beta.1`. The Windows agent remains
+  `1.4.0-beta.1`; its protocol did not need to change for this milestone.
+
 ## 1.8.0-beta.1 — 2026-07-15
 
 - Added a private multi-agent registry with one secret per agent and automatic migration from the

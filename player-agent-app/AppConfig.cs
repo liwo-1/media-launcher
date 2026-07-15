@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Cryptography;
 
 namespace MediaLauncherPlayerAgent;
 
@@ -25,7 +26,10 @@ public class AppConfig
 
     public static bool IsHttpUrl(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
-        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps) &&
+        string.IsNullOrEmpty(uri.UserInfo) &&
+        string.IsNullOrEmpty(uri.Query) &&
+        string.IsNullOrEmpty(uri.Fragment);
 
     public static AppConfig Load()
     {
@@ -62,6 +66,14 @@ public class AppConfig
             File.WriteAllText(tempPath, json);
             File.Move(tempPath, AppPaths.ConfigPath, overwrite: true);
         }
+    }
+
+    public string EnsureRegistrationCredential()
+    {
+        if (!string.IsNullOrEmpty(SharedSecret)) return SharedSecret;
+        if (!string.IsNullOrEmpty(RegistrationSecret)) return RegistrationSecret;
+        RegistrationSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        return RegistrationSecret;
     }
 
     public AppConfig Normalize()

@@ -1,0 +1,20 @@
+{
+  "MediaContainer": {
+    "Metadata": [
+      {
+        "ratingKey": "213",
+        "type": "episode",
+        "title": "Third",
+        "grandparentRatingKey": "200",
+        "parentRatingKey": "210",
+        "grandparentTitle": "Example Series",
+        "parentTitle": "Season 1",
+        "parentIndex": 1,
+        "index": 3,
+        "addedAt": 1700000100,
+        "thumb": "/library/metadata/213/thumb/1700000000",
+        "parentThumb": "/library/metadata/210/thumb/1700000000"
+      }
+    ]
+  }
+}

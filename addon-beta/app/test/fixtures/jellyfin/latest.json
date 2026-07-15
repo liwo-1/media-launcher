@@ -1,0 +1,27 @@
+[
+  {
+    "Id": "episode_2",
+    "Type": "Episode",
+    "Name": "Second",
+    "SeriesId": "series_1",
+    "SeasonId": "season_1",
+    "SeriesName": "Example Series",
+    "SeasonName": "Season 1",
+    "ParentIndexNumber": 1,
+    "IndexNumber": 2,
+    "DateCreated": "2023-11-14T22:15:00Z",
+    "SeriesPrimaryImageTag": "series_tag",
+    "ImageTags": {
+      "Primary": "episode_2_tag"
+    },
+    "ParentBackdropItemId": "series_1",
+    "ParentBackdropImageTags": ["series_backdrop_tag"],
+    "MediaSources": [
+      {
+        "Id": "source_episode_2",
+        "Protocol": "File",
+        "Path": "/srv/media/Television/Example Series/Season 01/Episode 02.mkv"
+      }
+    ]
+  }
+]

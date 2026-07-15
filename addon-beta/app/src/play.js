@@ -1,9 +1,11 @@
-const { getItemFull } = require('./plex');
+'use strict';
+
+const { createActiveProvider } = require('./provider-manager');
 const { resolveMediaPath } = require('./pathmap');
 const { monitorPlayback } = require('./playback-monitor');
 const {
   AgentRequestError,
-  createSession,
+  createSession: createAgentSession,
   resolvePlaybackTarget,
 } = require('./agent-client');
 
@@ -14,35 +16,51 @@ class PlayError extends Error {
   }
 }
 
-async function playItem(itemId, requestedTargetId = '') {
-  let target;
+function defaultDependencies() {
+  return {
+    resolvePlaybackTarget,
+    resolveMediaPath,
+    createAgentSession,
+    monitorPlayback,
+  };
+}
+
+function resolveTarget(requestedTargetId, dependencies) {
   try {
-    target = resolvePlaybackTarget(requestedTargetId);
-  } catch (err) {
-    throw new PlayError(err.message, err.status || 400);
+    return dependencies.resolvePlaybackTarget(requestedTargetId);
+  } catch (error) {
+    throw new PlayError(error.message, error.status || 400);
+  }
+}
+
+async function launchResolvedPlayback(
+  playback,
+  provider,
+  requestedTargetId = '',
+  dependencies = defaultDependencies()
+) {
+  if (!provider || playback?.item?.provider !== provider.kind || !playback?.sourcePath) {
+    throw new PlayError('The media provider returned an invalid playback source.', 502);
   }
 
-  const item = await getItemFull(itemId);
-  const sourcePath = item?.Media?.[0]?.Part?.[0]?.file;
-  if (!sourcePath) throw new PlayError('No playable file path returned by Plex for this item.');
-
+  const target = resolveTarget(requestedTargetId, dependencies);
   let targetPath;
   try {
-    targetPath = resolveMediaPath(sourcePath, target.agent);
-  } catch (err) {
-    throw new PlayError(err.message, 400);
+    targetPath = dependencies.resolveMediaPath(playback.sourcePath, target.agent);
+  } catch (error) {
+    throw new PlayError(error.message, 400);
   }
 
   let launched;
   try {
-    launched = await createSession(target, {
+    launched = await dependencies.createAgentSession(target, {
       path: targetPath,
-      title: item.title || '',
-      startPositionMs: item.viewOffset || 0,
+      title: playback.item.title || '',
+      startPositionMs: playback.resumePositionMs || 0,
     });
-  } catch (err) {
-    if (err instanceof AgentRequestError) throw new PlayError(err.message, err.status);
-    throw new PlayError(err.message || `${target.agent.name} could not start playback.`);
+  } catch (error) {
+    if (error instanceof AgentRequestError) throw new PlayError(error.message, error.status);
+    throw new PlayError(error.message || `${target.agent.name} could not start playback.`);
   }
 
   const capabilities = new Set(target.player.capabilities);
@@ -50,7 +68,7 @@ async function playItem(itemId, requestedTargetId = '') {
     capabilities.has('status.state') &&
     capabilities.has('status.position') &&
     capabilities.has('status.duration');
-  if (canMonitor) monitorPlayback(item, target, launched, targetPath);
+  if (canMonitor) dependencies.monitorPlayback(playback, provider, target, launched, targetPath);
 
   return {
     targetId: target.id,
@@ -58,4 +76,16 @@ async function playItem(itemId, requestedTargetId = '') {
   };
 }
 
-module.exports = { playItem, PlayError };
+async function playItem(itemId, requestedTargetId = '') {
+  let provider;
+  let playback;
+  try {
+    provider = createActiveProvider();
+    playback = await provider.resolvePlayback(itemId);
+  } catch (error) {
+    throw new PlayError(error.message, error.status || 502);
+  }
+  return launchResolvedPlayback(playback, provider, requestedTargetId);
+}
+
+module.exports = { launchResolvedPlayback, playItem, PlayError, _test: { defaultDependencies } };

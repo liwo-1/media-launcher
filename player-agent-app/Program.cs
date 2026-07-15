@@ -43,6 +43,12 @@ internal static class Program
 
         Logger.Log($"Config: HomeAssistantUrl={config.HomeAssistantUrl}, Port={config.Port}, MpcPathOverride={config.MpcPathOverride ?? "(none)"}");
 
+        if (string.IsNullOrEmpty(config.SharedSecret) && string.IsNullOrEmpty(config.RegistrationSecret))
+        {
+            config.EnsureRegistrationCredential();
+            config.Save();
+        }
+
         WebApplication app;
         try
         {

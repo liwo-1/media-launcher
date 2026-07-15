@@ -1,0 +1,30 @@
+{
+  "Items": [
+    {
+      "Id": "episode_2",
+      "Type": "Episode",
+      "Name": "Second",
+      "SeriesId": "series_1",
+      "SeasonId": "season_1",
+      "SeriesName": "Example Series",
+      "SeasonName": "Season 1",
+      "ParentIndexNumber": 1,
+      "IndexNumber": 2,
+      "RunTimeTicks": 27000000000,
+      "UserData": {
+        "PlaybackPositionTicks": 9000000000
+      },
+      "SeriesPrimaryImageTag": "series_tag",
+      "ImageTags": {
+        "Primary": "episode_2_tag"
+      },
+      "MediaSources": [
+        {
+          "Id": "source_episode_2",
+          "Protocol": "File",
+          "Path": "/srv/media/Television/Example Series/Season 01/Episode 02.mkv"
+        }
+      ]
+    }
+  ]
+}

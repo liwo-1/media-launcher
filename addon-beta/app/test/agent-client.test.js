@@ -9,13 +9,18 @@ process.env.DATA_DIR = dataDir;
 
 const { writeSettings } = require('../src/settings-store');
 const { findTargetById, targetId, writeAgentStore } = require('../src/agent-store');
-const { createSession, getSessionStatus, resolvePlaybackTarget } = require('../src/agent-client');
+const {
+  controlSession,
+  createSession,
+  getSessionStatus,
+  resolvePlaybackTarget,
+} = require('../src/agent-client');
 
 const originalFetch = global.fetch;
 const firstId = '1'.repeat(32);
 const secondId = '2'.repeat(32);
 
-function agent(instanceId, url, secret, protocolVersion = 2) {
+function agent(instanceId, url, secret, protocolVersion = 2, capabilities = []) {
   return {
     instanceId,
     name: instanceId === firstId ? 'Living Room' : 'Bedroom',
@@ -29,7 +34,13 @@ function agent(instanceId, url, secret, protocolVersion = 2) {
       name: 'MPC-HC',
       kind: 'mpc-hc',
       available: true,
-      capabilities: ['play.file', 'status.state', 'status.position', 'status.duration'],
+      capabilities: [
+        'play.file',
+        'status.state',
+        'status.position',
+        'status.duration',
+        ...capabilities,
+      ],
     }],
     pathMap: [],
   };
@@ -98,14 +109,96 @@ test('status polling follows an authenticated agent address refresh', async () =
   let requestedUrl;
   global.fetch = async (url) => {
     requestedUrl = url;
-    return new Response(JSON.stringify({ state: 'playing', positionMs: 1, durationMs: 2 }), {
+    return new Response(JSON.stringify({
+      state: 'stopped',
+      positionMs: 1,
+      durationMs: 2,
+      endReason: 'stopped-by-request',
+    }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   };
 
-  await getSessionStatus(selected, 'session-1', 2);
+  const status = await getSessionStatus(selected, 'session-1', 2);
   assert.equal(requestedUrl, 'http://new-address:7777/v2/sessions/session-1');
+  assert.equal(status.endReason, 'stopped-by-request');
+});
+
+test('forwards a unified session command to the selected v2 agent with bearer authentication', async () => {
+  const secret = 'a'.repeat(48);
+  const first = agent(
+    firstId,
+    'http://living-room:7777',
+    secret,
+    2,
+    ['control.pause', 'control.seek', 'control.stop']
+  );
+  writeAgentStore({ agents: [first] });
+  const selectedTargetId = targetId(firstId, 'mpc-hc');
+  let captured;
+  global.fetch = async (url, options) => {
+    captured = { url, options, body: JSON.parse(options.body) };
+    return new Response(JSON.stringify({ sessionId: 'session-1', state: 'seeking' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  const result = await controlSession(selectedTargetId, 'session-1', {
+    action: 'seek',
+    positionMs: 90000,
+  });
+
+  assert.equal(captured.url, 'http://living-room:7777/v2/sessions/session-1/control');
+  assert.equal(captured.options.method, 'POST');
+  assert.equal(captured.options.headers.Authorization, `Bearer ${secret}`);
+  assert.deepEqual(captured.body, { action: 'seek', positionMs: 90000 });
+  assert.deepEqual(result, { sessionId: 'session-1', state: 'seeking' });
+});
+
+test('re-resolves a target before control so stale addresses and secrets are never used', async () => {
+  const first = agent(firstId, 'http://old-address:7777', 'a'.repeat(48), 2, ['control.pause']);
+  writeAgentStore({ agents: [first] });
+  const selectedTargetId = targetId(firstId, 'mpc-hc');
+  first.url = 'http://new-address:7777';
+  first.secret = 'b'.repeat(48);
+  writeAgentStore({ agents: [first] });
+  let captured;
+  global.fetch = async (url, options) => {
+    captured = { url, options };
+    return new Response(JSON.stringify({ state: 'paused' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  await controlSession(selectedTargetId, 'session-1', { action: 'pause' });
+  assert.equal(captured.url, 'http://new-address:7777/v2/sessions/session-1/control');
+  assert.equal(captured.options.headers.Authorization, `Bearer ${'b'.repeat(48)}`);
+});
+
+test('rejects controls for legacy agents and players without the matching capability', async () => {
+  let fetchCalls = 0;
+  global.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error('fetch should not run');
+  };
+
+  const legacy = agent(firstId, 'http://legacy:7777', 'a'.repeat(48), 1, ['control.pause']);
+  writeAgentStore({ agents: [legacy] });
+  await assert.rejects(
+    controlSession(targetId(firstId, 'mpc-hc'), 'session-1', { action: 'pause' }),
+    /protocol version 2/
+  );
+
+  const launchOnly = agent(firstId, 'http://launch-only:7777', 'a'.repeat(48));
+  writeAgentStore({ agents: [launchOnly] });
+  await assert.rejects(
+    controlSession(targetId(firstId, 'mpc-hc'), 'session-1', { action: 'stop' }),
+    /does not support stop/
+  );
+  assert.equal(fetchCalls, 0);
 });
 
 test('does not silently re-pair a reset managed agent after a 503', async () => {

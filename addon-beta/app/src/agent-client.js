@@ -3,6 +3,12 @@ const { readSettings } = require('./settings-store');
 const { findTargetById, listTargets, readAgentStore } = require('./agent-store');
 
 const REQUEST_TIMEOUT_MS = 5000;
+const CONTROL_CAPABILITIES = Object.freeze({
+  pause: 'control.pause',
+  resume: 'control.pause',
+  seek: 'control.seek',
+  stop: 'control.stop',
+});
 
 class AgentRequestError extends Error {
   constructor(message, status = 502, transportFailure = false) {
@@ -118,6 +124,9 @@ async function getSessionStatus(target, sessionId, protocolVersion) {
       state: body.state || 'stopped',
       position: Number(body.positionMs) || 0,
       duration: Number(body.durationMs) || 0,
+      ...(typeof body.endReason === 'string' && body.endReason
+        ? { endReason: body.endReason }
+        : {}),
     };
   }
   return {
@@ -126,6 +135,43 @@ async function getSessionStatus(target, sessionId, protocolVersion) {
     position: Number(body.position) || 0,
     duration: Number(body.duration) || 0,
   };
+}
+
+async function controlSession(targetId, sessionId, control) {
+  // Resolve the opaque target ID again for every command. Browser input can therefore never
+  // choose an agent URL or credential, and a removed/re-paired target cannot use stale secrets.
+  const target = findTargetById(targetId);
+  if (!target) throw new AgentRequestError('The selected playback target no longer exists.', 404);
+
+  const { agent, player } = target;
+  if (agent.negotiatedProtocolVersion < 2) {
+    throw new AgentRequestError('Playback controls require agent protocol version 2.', 409);
+  }
+
+  const capability = CONTROL_CAPABILITIES[control.action];
+  if (!capability || !player.capabilities.includes(capability)) {
+    throw new AgentRequestError(`${player.name} does not support ${control.action}.`, 409);
+  }
+
+  const body = { action: control.action };
+  if (control.action === 'seek') body.positionMs = control.positionMs;
+  const response = await send(
+    agent,
+    `/v2/sessions/${encodeURIComponent(sessionId)}/control`,
+    {
+      method: 'POST',
+      headers: agentHeaders(agent, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    }
+  );
+  const responseBody = await readBody(response);
+  if (!response.ok) {
+    throw new AgentRequestError(
+      responseBody.error || `${agent.name} returned ${response.status}`,
+      response.status
+    );
+  }
+  return responseBody;
 }
 
 function resolvePlaybackTarget(requestedTargetId) {
@@ -157,6 +203,7 @@ module.exports = {
   agentHeaders,
   fetchWithTimeout,
   createSession,
+  controlSession,
   getSessionStatus,
   resolvePlaybackTarget,
 };

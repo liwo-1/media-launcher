@@ -55,6 +55,7 @@ test('browser-facing settings recursively omit private installation IDs and secr
     playerAgentUrl: 'http://media-pc:7777',
     playerAgentSecret: secret,
     playerAgentInstanceId: instanceId,
+    futurePrivateCredential: 'must-never-reach-the-browser',
   });
   readAgentStore();
 
@@ -63,6 +64,8 @@ test('browser-facing settings recursively omit private installation IDs and secr
 
   assert.equal(serialized.includes(secret), false);
   assert.equal(serialized.includes(instanceId), false);
+  assert.equal(serialized.includes('must-never-reach-the-browser'), false);
+  assert.equal(Object.hasOwn(values, 'futurePrivateCredential'), false);
   assert.equal(values.agents.length, 1);
   assert.equal(values.agents[0].players[0].id, targetId(instanceId, 'mpc-hc'));
 });
