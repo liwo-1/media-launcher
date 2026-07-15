@@ -60,7 +60,6 @@ function pipeImageBody(response, res, {
   const timeout = setTimeout(() => {
     stream.destroy(new ImageStreamError('The artwork response timed out.'));
   }, timeoutMs);
-  timeout.unref?.();
 
   pipeline(stream, limiter, res, (error) => {
     clearTimeout(timeout);
